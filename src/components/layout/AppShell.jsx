@@ -5,10 +5,11 @@ import Logo from "@/components/branding/Logo";
 import { createPageUrl } from "@/utils";
 
 const navItems = [
+  { label: "Home", to: "/" },
+  { label: "Easy Setup", to: createPageUrl("Setup") },
   { label: "Dashboard", to: createPageUrl("Dashboard") },
   { label: "Send", to: createPageUrl("SendMoney") },
   { label: "Recipients", to: createPageUrl("Recipients") },
-  { label: "Checklist", to: createPageUrl("LaunchChecklist") },
   { label: "Compliance", to: createPageUrl("SecurityCompliance") }
 ];
 

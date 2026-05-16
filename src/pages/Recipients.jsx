@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Link } from "react-router-dom";
+import { createPageUrl } from "@/utils";
 import { AlertTriangle, Building2, Plus, ShieldCheck, Smartphone, Wallet } from "lucide-react";
 
 const recipients = [
@@ -20,10 +22,12 @@ export default function Recipients() {
             <h1 className="text-3xl font-bold text-primary mb-2">Recipients</h1>
             <p className="text-neutral-600">Manage payout profiles, verification status, and transfer corridors.</p>
           </div>
-          <Button>
-            <Plus className="w-5 h-5 mr-2" />
-            Add Recipient
-          </Button>
+          <Link to={createPageUrl("Setup")}>
+            <Button>
+              <Plus className="w-5 h-5 mr-2" />
+              Add Recipient
+            </Button>
+          </Link>
         </div>
         <Alert className="border-yellow-200 bg-yellow-50">
           <AlertTriangle className="w-5 h-5 text-yellow-600" />
