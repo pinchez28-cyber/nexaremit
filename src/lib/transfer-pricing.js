@@ -25,3 +25,7 @@ export function calculateTransferQuote({ amount = 0, currency = "USD", recipient
     isOverLimit
   };
 }
+
+export function calculateSandboxQuote(input) {
+  return calculateTransferQuote(input);
+}

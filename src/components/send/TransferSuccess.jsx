@@ -19,7 +19,7 @@ export default function TransferSuccess({ transferData, onDone }) {
             <ReceiptText className="w-5 h-5 text-blue-700" />
             <div className="text-left">
               <p className="font-semibold text-primary">Receipt ID AS-{Date.now().toString().slice(-6)}</p>
-              <p className="text-sm text-neutral-500">Prototype confirmation. No real funds moved.</p>
+              <p className="text-sm text-neutral-500">Sandbox confirmation. Real providers are not active yet.</p>
             </div>
           </div>
           <div className="flex flex-col sm:flex-row justify-center gap-3">

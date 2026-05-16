@@ -1,13 +1,26 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { calculateTransferQuote } from "@/lib/transfer-pricing";
-import { AlertTriangle, ShieldCheck } from "lucide-react";
+import { calculateSandboxQuote } from "@/lib/transfer-pricing";
+import { transferOrchestrator } from "@/integrations/transfer-orchestrator";
+import { AlertTriangle, CheckCircle, Landmark, ShieldCheck } from "lucide-react";
 
 export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
-  const quote = calculateTransferQuote(transferData);
+  const fallbackQuote = calculateSandboxQuote(transferData);
+  const [preparedTransfer, setPreparedTransfer] = useState(null);
+  const quote = preparedTransfer || fallbackQuote;
+
+  useEffect(() => {
+    let isMounted = true;
+    transferOrchestrator.prepareTransfer(transferData).then((nextTransfer) => {
+      if (isMounted) setPreparedTransfer(nextTransfer);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [transferData]);
 
   return (
     <Card className="shadow-premium border-0">
@@ -52,6 +65,22 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
           <ShieldCheck className="w-5 h-5 text-green-600" />
           <span>Quote expires in 60 seconds. Re-price before submitting to a real payment processor.</span>
         </div>
+        {preparedTransfer && (
+          <div className="provider-readiness">
+            <div>
+              <CheckCircle className="w-5 h-5 text-green-600" />
+              <span>KYC: {preparedTransfer.providers.kyc.status}</span>
+            </div>
+            <div>
+              <ShieldCheck className="w-5 h-5 text-green-600" />
+              <span>Screening: {preparedTransfer.providers.sanctions.status}</span>
+            </div>
+            <div>
+              <Landmark className="w-5 h-5 text-blue-700" />
+              <span>Settlement: {preparedTransfer.providers.settlement.rail}</span>
+            </div>
+          </div>
+        )}
       </CardContent>
       <CardFooter className="justify-between">
         <Button variant="outline" onClick={onBack}>Back</Button>

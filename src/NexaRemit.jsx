@@ -13,6 +13,7 @@ import AppShell from "./components/layout/AppShell";
 import Recipients from "./pages/Recipients";
 import Home from "./pages/Home";
 import Setup from "./pages/Setup";
+import Integrations from "./pages/Integrations";
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -41,6 +42,7 @@ const AuthenticatedApp = () => {
         <Route path="/Setup" element={<Setup />} />
         <Route path="/SendMoney" element={<SendMoney />} />
         <Route path="/Recipients" element={<Recipients />} />
+        <Route path="/Integrations" element={<Integrations />} />
         <Route path="/LaunchChecklist" element={<LaunchChecklist />} />
         <Route path="/SecurityCompliance" element={<SecurityCompliance />} />
         <Route path="*" element={<PageNotFound />} />

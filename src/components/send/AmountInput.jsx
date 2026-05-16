@@ -1,15 +1,28 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { calculateTransferQuote } from "@/lib/transfer-pricing";
-import { AlertTriangle, Clock, ReceiptText } from "lucide-react";
+import { calculateSandboxQuote } from "@/lib/transfer-pricing";
+import { transferOrchestrator } from "@/integrations/transfer-orchestrator";
+import { AlertTriangle, Clock, PlugZap, ReceiptText } from "lucide-react";
 
 export default function AmountInput({ recipient, amount, currency, purpose, onAmountChange, onNext, onBack }) {
-  const quote = calculateTransferQuote({ amount, currency, recipient });
+  const fallbackQuote = calculateSandboxQuote({ amount, currency, recipient });
+  const [providerQuote, setProviderQuote] = useState(null);
+  const quote = providerQuote || fallbackQuote;
   const updateAmount = (nextAmount) => onAmountChange({ amount: nextAmount, currency, purpose });
   const updateCurrency = (nextCurrency) => onAmountChange({ amount, currency: nextCurrency, purpose });
   const updatePurpose = (nextPurpose) => onAmountChange({ amount, currency, purpose: nextPurpose });
+
+  useEffect(() => {
+    let isMounted = true;
+    transferOrchestrator.createQuote({ amount, currency, recipient, purpose }).then((nextQuote) => {
+      if (isMounted) setProviderQuote(nextQuote);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [amount, currency, recipient, purpose]);
 
   return (
     <Card className="shadow-premium border-0">
@@ -51,7 +64,7 @@ export default function AmountInput({ recipient, amount, currency, purpose, onAm
         <aside className="quote-summary">
           <div className="quote-summary-head">
             <ReceiptText className="w-5 h-5" />
-            <span>Live quote</span>
+            <span>Provider-ready quote</span>
           </div>
           <div className="quote-row">
             <span>Rate</span>
@@ -68,6 +81,10 @@ export default function AmountInput({ recipient, amount, currency, purpose, onAm
           <div className="delivery-chip">
             <Clock className="w-4 h-4" />
             {quote.deliveryEstimate}
+          </div>
+          <div className="integration-chip">
+            <PlugZap className="w-4 h-4" />
+            Sandbox adapters active
           </div>
         </aside>
       </CardContent>
