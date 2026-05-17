@@ -4,13 +4,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { CheckCircle, ReceiptText } from "lucide-react";
+import { getPaymentIntentLabel, getPaymentMethodLabel } from "@/lib/payment-labels";
 
 export default function TransferSuccess({ transferData, onDone }) {
-  const paymentIntentId = transferData.paymentMethod?.paymentIntentId;
+  const paymentIntentId = getPaymentIntentLabel(transferData.paymentMethod);
+  const paymentLabel = getPaymentMethodLabel(transferData.paymentMethod);
   const hasStripeAuthorization = Boolean(paymentIntentId);
   const title = hasStripeAuthorization ? "Test Payment Authorized" : "Sandbox Transfer Recorded";
   const summary = hasStripeAuthorization
-    ? `Stripe test payment was authorized for ${transferData.currency} ${Number(transferData.amount || 0).toFixed(2)}. No live funds moved.`
+    ? `${paymentLabel} test payment was authorized for ${transferData.currency} ${Number(transferData.amount || 0).toFixed(2)}. No live funds moved and no payout was sent.`
     : `A sandbox transfer for ${transferData.currency} ${Number(transferData.amount || 0).toFixed(2)} was recorded for ${transferData.recipient?.name}. No real money has moved.`;
 
   return (
@@ -27,7 +29,7 @@ export default function TransferSuccess({ transferData, onDone }) {
             <div className="text-left">
               <p className="font-semibold text-primary">Sandbox Receipt AS-{Date.now().toString().slice(-6)}</p>
               <p className="text-sm text-neutral-500">
-                {hasStripeAuthorization ? `Stripe test intent: ${paymentIntentId}` : "Real providers are not active yet."}
+                {hasStripeAuthorization ? `Stripe test PaymentIntent: ${paymentIntentId}` : "Real providers are not active yet."}
               </p>
             </div>
           </div>

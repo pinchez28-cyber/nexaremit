@@ -4,6 +4,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { calculateSandboxQuote } from "@/lib/transfer-pricing";
+import { getPaymentIntentLabel, getPaymentMethodLabel } from "@/lib/payment-labels";
 import { transferOrchestrator } from "@/integrations/transfer-orchestrator";
 import { AlertTriangle, CheckCircle, Landmark, ShieldCheck } from "lucide-react";
 
@@ -13,9 +14,8 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
   const quote = preparedTransfer || fallbackQuote;
   const hasStripeAuthorization = Boolean(transferData.paymentMethod?.paymentIntentId);
   const hasPaymentMethod = Boolean(transferData.paymentMethod?.type || transferData.paymentMethod);
-  const paymentLabel = transferData.paymentMethod?.type
-    ? transferData.paymentMethod.type.replace("_", " ")
-    : "Not selected";
+  const paymentLabel = getPaymentMethodLabel(transferData.paymentMethod);
+  const paymentIntentId = getPaymentIntentLabel(transferData.paymentMethod);
 
   useEffect(() => {
     let isMounted = true;
@@ -70,6 +70,12 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
           <span className="text-neutral-600">Payment method</span>
           <span className="font-semibold">{paymentLabel}</span>
         </div>
+        {paymentIntentId && (
+          <div className="flex justify-between border-b border-neutral-100 pb-3">
+            <span className="text-neutral-600">Stripe test payment</span>
+            <span className="font-semibold">{paymentIntentId}</span>
+          </div>
+        )}
         <div className="flex justify-between border-b border-neutral-100 pb-3">
           <span className="text-neutral-600">Send amount</span>
           <span className="font-semibold">{transferData.currency} {Number(transferData.amount || 0).toFixed(2)}</span>
