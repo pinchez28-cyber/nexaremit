@@ -11,6 +11,7 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
   const fallbackQuote = calculateSandboxQuote(transferData);
   const [preparedTransfer, setPreparedTransfer] = useState(null);
   const quote = preparedTransfer || fallbackQuote;
+  const hasStripeAuthorization = Boolean(transferData.paymentMethod?.paymentIntentId);
 
   useEffect(() => {
     let isMounted = true;
@@ -37,6 +38,14 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
             This confirms the prototype flow only. A production app must run KYC, sanctions screening, velocity limits, and payment authorization before creating a transfer.
           </AlertDescription>
         </Alert>
+        {!hasStripeAuthorization && (
+          <Alert className="border-yellow-200 bg-yellow-50">
+            <AlertTriangle className="w-5 h-5 text-yellow-600" />
+            <AlertDescription className="text-yellow-800">
+              No Stripe test payment has been authorized for this transfer. Continuing will only create a sandbox record.
+            </AlertDescription>
+          </Alert>
+        )}
         <div className="flex justify-between border-b border-neutral-100 pb-3">
           <span className="text-neutral-600">Recipient</span>
           <span className="font-semibold">{transferData.recipient?.name}</span>
@@ -84,7 +93,7 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
       </CardContent>
       <CardFooter className="justify-between">
         <Button variant="outline" onClick={onBack}>Back</Button>
-        <Button onClick={onConfirm}>Confirm Transfer</Button>
+        <Button onClick={onConfirm}>{hasStripeAuthorization ? "Confirm Test Transfer" : "Create Sandbox Record"}</Button>
       </CardFooter>
     </Card>
   );

@@ -6,20 +6,29 @@ import { createPageUrl } from "@/utils";
 import { CheckCircle, ReceiptText } from "lucide-react";
 
 export default function TransferSuccess({ transferData, onDone }) {
+  const paymentIntentId = transferData.paymentMethod?.paymentIntentId;
+  const hasStripeAuthorization = Boolean(paymentIntentId);
+  const title = hasStripeAuthorization ? "Test Payment Authorized" : "Sandbox Transfer Recorded";
+  const summary = hasStripeAuthorization
+    ? `Stripe test payment was authorized for ${transferData.currency} ${Number(transferData.amount || 0).toFixed(2)}. No live funds moved.`
+    : `A sandbox transfer for ${transferData.currency} ${Number(transferData.amount || 0).toFixed(2)} was recorded for ${transferData.recipient?.name}. No real money has moved.`;
+
   return (
     <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-6">
       <Card className="max-w-lg w-full shadow-premium border-0">
         <CardContent className="p-8 text-center">
           <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-5" />
-          <h1 className="text-2xl font-bold text-primary mb-2">Transfer Complete</h1>
+          <h1 className="text-2xl font-bold text-primary mb-2">{title}</h1>
           <p className="text-neutral-600 mb-6">
-            {transferData.currency} {Number(transferData.amount || 0).toFixed(2)} is on its way to {transferData.recipient?.name}.
+            {summary}
           </p>
           <div className="receipt-preview">
             <ReceiptText className="w-5 h-5 text-blue-700" />
             <div className="text-left">
-              <p className="font-semibold text-primary">Receipt ID AS-{Date.now().toString().slice(-6)}</p>
-              <p className="text-sm text-neutral-500">Sandbox confirmation. Real providers are not active yet.</p>
+              <p className="font-semibold text-primary">Sandbox Receipt AS-{Date.now().toString().slice(-6)}</p>
+              <p className="text-sm text-neutral-500">
+                {hasStripeAuthorization ? `Stripe test intent: ${paymentIntentId}` : "Real providers are not active yet."}
+              </p>
             </div>
           </div>
           <div className="flex flex-col sm:flex-row justify-center gap-3">
