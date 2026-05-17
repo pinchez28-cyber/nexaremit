@@ -23,7 +23,7 @@ export default function Home() {
             </div>
             <h1>Send money home without confusion.</h1>
             <p>
-              NexaRemit is designed to make international transfers feel calm, clear, and easy for every generation.
+              NexaRemit is designed to make international transfers feel calm, clear, and easy across Africa, Asia, Latin America, and beyond.
             </p>
             <div className="home-actions">
               <Link to={createPageUrl("Setup")}>

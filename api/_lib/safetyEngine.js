@@ -1,4 +1,20 @@
-const allowedCorridors = new Set(["US-NG", "US-KE", "US-GH", "GB-NG", "GB-KE", "EU-GH"]);
+const allowedCorridors = new Set([
+  "US-NG",
+  "US-KE",
+  "US-GH",
+  "GB-NG",
+  "GB-KE",
+  "EU-GH",
+  "GB-IN",
+  "US-PH",
+  "US-MX",
+  "EU-BR",
+  "GB-PK",
+  "SG-BD",
+  "EU-ZA",
+  "AE-EG",
+  "EU-MA"
+]);
 
 export function runTransferSafetyChecks({ user, amount, currency, recipient, quote }) {
   const numericAmount = Number(amount || 0);

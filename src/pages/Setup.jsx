@@ -75,6 +75,15 @@ export default function Setup() {
                   <option>Kenya</option>
                   <option>Nigeria</option>
                   <option>Ghana</option>
+                  <option>India</option>
+                  <option>Philippines</option>
+                  <option>Mexico</option>
+                  <option>Brazil</option>
+                  <option>Pakistan</option>
+                  <option>Bangladesh</option>
+                  <option>South Africa</option>
+                  <option>Egypt</option>
+                  <option>Morocco</option>
                   <option>Other supported country</option>
                 </select>
               </label>

@@ -10,7 +10,16 @@ import { AlertTriangle, Building2, Plus, ShieldCheck, Smartphone, Wallet } from 
 const recipients = [
   { name: "Amara Okafor", country: "Nigeria", method: "Bank transfer", currency: "NGN", status: "Verified", icon: Building2 },
   { name: "Daniel Mwangi", country: "Kenya", method: "Mobile money", currency: "KES", status: "Verified", icon: Smartphone },
-  { name: "Efua Mensah", country: "Ghana", method: "Wallet payout", currency: "GHS", status: "Review required", icon: Wallet }
+  { name: "Efua Mensah", country: "Ghana", method: "Wallet payout", currency: "GHS", status: "Review required", icon: Wallet },
+  { name: "Priya Sharma", country: "India", method: "Bank transfer", currency: "INR", status: "Verified", icon: Building2 },
+  { name: "Maria Santos", country: "Philippines", method: "Mobile wallet", currency: "PHP", status: "Verified", icon: Smartphone },
+  { name: "Carlos Rivera", country: "Mexico", method: "Bank transfer", currency: "MXN", status: "Verified", icon: Building2 },
+  { name: "Ana Oliveira", country: "Brazil", method: "PIX payout", currency: "BRL", status: "Verified", icon: Wallet },
+  { name: "Ahmed Khan", country: "Pakistan", method: "Bank transfer", currency: "PKR", status: "Review required", icon: Building2 },
+  { name: "Nusrat Rahman", country: "Bangladesh", method: "Mobile money", currency: "BDT", status: "Verified", icon: Smartphone },
+  { name: "Thabo Mbeki", country: "South Africa", method: "Bank transfer", currency: "ZAR", status: "Verified", icon: Building2 },
+  { name: "Mariam Hassan", country: "Egypt", method: "Cash pickup", currency: "EGP", status: "Review required", icon: Wallet },
+  { name: "Youssef El Amrani", country: "Morocco", method: "Bank transfer", currency: "MAD", status: "Verified", icon: Building2 }
 ];
 
 export default function Recipients() {

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { calculateSandboxQuote } from "@/lib/transfer-pricing";
+import { sendCurrencies } from "@/lib/currency-options";
 import { transferOrchestrator } from "@/integrations/transfer-orchestrator";
 import { AlertTriangle, Clock, PlugZap, ReceiptText } from "lucide-react";
 
@@ -38,9 +39,9 @@ export default function AmountInput({ recipient, amount, currency, purpose, onAm
           <label>
             <span className="text-sm font-medium text-neutral-700">Currency</span>
             <select className="mt-2 w-full rounded-lg border border-neutral-300 px-4 py-3" value={currency} onChange={(event) => updateCurrency(event.target.value)}>
-              <option>USD</option>
-              <option>GBP</option>
-              <option>EUR</option>
+              {sendCurrencies.map((option) => (
+                <option key={option.code} value={option.code}>{option.label}</option>
+              ))}
             </select>
           </label>
           <label className="sm:col-span-3">
