@@ -52,25 +52,12 @@ export default function Home() {
               ))}
             </div>
           </div>
-          <div className="home-visual home-story">
-            <figure className="home-story-card home-story-sender">
-              <img src="/assets/nexaremit-sender.png" alt="Sender using a phone to start a money transfer" />
-              <figcaption>
-                <span>Sender</span>
-                Starts with clear steps
-              </figcaption>
-            </figure>
-            <figure className="home-story-card home-story-receiver">
-              <img src="/assets/nexaremit-receiver.png" alt="Receiver smiling after getting a transfer message" />
-              <figcaption>
-                <span>Receiver</span>
-                Gets a simple message
-              </figcaption>
-            </figure>
+          <div className="home-visual">
+            <img src="/assets/nexaremit-world-family-hero.png" alt="World map connections with a sender and receiver family using phones" />
             <div className="home-transfer-card">
               <div className="home-card-label">
                 <Smartphone className="w-5 h-5" />
-                Simple review
+                Sender to receiver
               </div>
               <div className="home-transfer-row">
                 <span>Fee shown first</span>
