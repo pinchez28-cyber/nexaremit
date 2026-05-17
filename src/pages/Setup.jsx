@@ -19,9 +19,9 @@ export default function Setup() {
     <div className="setup-page">
       <div className="max-w-5xl mx-auto space-y-8">
         <div className="setup-heading">
-          <p className="home-kicker"><ShieldCheck className="w-5 h-5" /> Easy setup</p>
-          <h1>Set up sending and receiving in a few calm steps.</h1>
-          <p>Use this guided form when you want fewer choices on each screen and larger, clearer controls.</p>
+          <p className="home-kicker"><ShieldCheck className="w-5 h-5" /> Start here</p>
+          <h1>Set up the sender and receiver one step at a time.</h1>
+          <p>Use this guided form for fewer choices, bigger controls, and simple wording that works for first-time users.</p>
         </div>
 
         <Alert className="border-yellow-200 bg-yellow-50">
@@ -34,19 +34,19 @@ export default function Setup() {
         <div className="setup-grid">
           <Card className="shadow-premium border-0">
             <CardHeader>
-              <CardTitle className="setup-title"><UserRound className="w-6 h-6" /> Sender setup</CardTitle>
+              <CardTitle className="setup-title"><UserRound className="w-6 h-6" /> Step 1: Who is sending?</CardTitle>
             </CardHeader>
             <CardContent className="easy-form">
               <label>
-                <span>Your full name</span>
+                <span>Sender full name</span>
                 <input placeholder="Example: Maria Johnson" />
               </label>
               <label>
-                <span>Mobile number</span>
+                <span>Sender phone number</span>
                 <input placeholder="Example: +1 555 123 4567" />
               </label>
               <label>
-                <span>How will you pay?</span>
+                <span>How will the sender pay?</span>
                 <select>
                   <option>Debit card</option>
                   <option>Bank transfer</option>
@@ -55,18 +55,18 @@ export default function Setup() {
               </label>
               <div className="simple-tip">
                 <CreditCard className="w-5 h-5" />
-                Payment details can be added later. Start with basic contact information.
+                Card or bank details should be collected only through secure payment partners.
               </div>
             </CardContent>
           </Card>
 
           <Card className="shadow-premium border-0">
             <CardHeader>
-              <CardTitle className="setup-title"><Phone className="w-6 h-6" /> Receiver setup</CardTitle>
+              <CardTitle className="setup-title"><Phone className="w-6 h-6" /> Step 2: Who receives?</CardTitle>
             </CardHeader>
             <CardContent className="easy-form">
               <label>
-                <span>Receiver name</span>
+                <span>Receiver full name</span>
                 <input placeholder="Example: Daniel Mwangi" />
               </label>
               <label>

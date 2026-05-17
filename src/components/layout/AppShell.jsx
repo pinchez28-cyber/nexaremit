@@ -6,13 +6,13 @@ import { createPageUrl } from "@/utils";
 
 const navItems = [
   { label: "Home", to: "/" },
-  { label: "Easy Setup", to: createPageUrl("Setup") },
+  { label: "Start Here", to: createPageUrl("Setup") },
+  { label: "Send Money", to: createPageUrl("SendMoney") },
   { label: "Dashboard", to: createPageUrl("Dashboard") },
-  { label: "Send", to: createPageUrl("SendMoney") },
   { label: "History", to: createPageUrl("History") },
   { label: "Recipients", to: createPageUrl("Recipients") },
-  { label: "Integrations", to: createPageUrl("Integrations") },
-  { label: "Compliance", to: createPageUrl("SecurityCompliance") }
+  { label: "Partners", to: createPageUrl("Integrations") },
+  { label: "Safety", to: createPageUrl("SecurityCompliance") }
 ];
 
 export default function AppShell({ children }) {

@@ -3,12 +3,12 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createPageUrl } from "@/utils";
-import { ArrowRight, CheckCircle, Clock, HandCoins, ShieldCheck, UserRoundPlus } from "lucide-react";
+import { ArrowRight, CheckCircle, Clock, HandCoins, ShieldCheck, Smartphone, UserRoundPlus } from "lucide-react";
 
 const promises = [
-  "Clear fees before you send",
-  "Simple receiver setup",
-  "Plain-language transfer status"
+  "See the full cost first",
+  "Add a receiver step by step",
+  "Know what happens next"
 ];
 
 export default function Home() {
@@ -19,16 +19,16 @@ export default function Home() {
           <div className="home-copy">
             <div className="home-kicker">
               <ShieldCheck className="w-5 h-5" />
-              Simple cross-border transfers
+              Simple money transfer practice app
             </div>
-            <h1>Send money home without confusion.</h1>
+            <h1>Send money home with clear steps.</h1>
             <p>
-              NexaRemit is designed to make international transfers feel calm, clear, and easy across Africa, Asia, Latin America, and beyond.
+              NexaRemit is designed for families, first-time users, and anyone who wants large buttons, plain words, and no surprises before sending.
             </p>
             <div className="home-actions">
               <Link to={createPageUrl("Setup")}>
                 <Button className="home-primary-action">
-                  Start Easy Setup
+                  Start Here
                   <ArrowRight className="w-5 h-5" />
                 </Button>
               </Link>
@@ -49,6 +49,10 @@ export default function Home() {
           </div>
           <Card className="home-transfer-card">
             <CardContent className="p-8">
+              <div className="home-card-label">
+                <Smartphone className="w-5 h-5" />
+                Example transfer
+              </div>
               <div className="home-transfer-row">
                 <span>You send</span>
                 <strong>$250.00</strong>
@@ -63,7 +67,7 @@ export default function Home() {
               </div>
               <div className="home-delivery">
                 <Clock className="w-5 h-5" />
-                Estimated delivery: same day
+                Clear message: same-day estimate
               </div>
             </CardContent>
           </Card>
@@ -72,8 +76,8 @@ export default function Home() {
 
       <section className="max-w-7xl mx-auto home-section">
         <div className="section-heading">
-          <h2>Built for people who want simple steps</h2>
-          <p>No complicated dashboards required. Start with the person sending, add the person receiving, then review everything before sending.</p>
+          <h2>Built for people who prefer simple guidance</h2>
+          <p>No complicated dashboards required. Start with the sender, add the receiver, then review everything in plain words before the transfer continues.</p>
         </div>
         <div className="friendly-grid">
           <div className="friendly-card">
