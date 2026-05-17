@@ -1065,7 +1065,15 @@ a:focus-visible {
   min-height: 100vh;
   padding: 3rem 1.5rem;
   background:
-    linear-gradient(180deg, #fffaf0 0%, #f8faf7 22rem);
+    radial-gradient(circle at 82% 5%, rgb(245 158 11 / 0.16), transparent 20rem),
+    linear-gradient(180deg, #fffaf0 0%, #f8faf7 24rem);
+}
+
+.setup-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.55fr);
+  align-items: end;
+  gap: 1.5rem;
 }
 
 .setup-heading {
@@ -1076,14 +1084,107 @@ a:focus-visible {
   margin-bottom: 0.75rem;
 }
 
+.setup-helper-panel {
+  padding: 1.5rem;
+  border-radius: 1rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 18px 42px -30px rgb(15 23 42 / 0.6);
+}
+
+.setup-helper-icon {
+  width: 3rem;
+  height: 3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+  border-radius: 0.875rem;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.setup-helper-panel h2 {
+  margin: 0 0 1rem;
+  color: var(--brand-ink);
+  font-size: 1.25rem;
+}
+
+.setup-needs-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.setup-needs-list span {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  color: #435266;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.setup-needs-list svg {
+  flex: 0 0 auto;
+  color: #0f766e;
+}
+
+.setup-stepper {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.setup-step-pill {
+  min-height: 4.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border-radius: 1rem;
+  background: #fff;
+  border: 1px solid #dbeafe;
+  color: var(--brand-ink);
+  font-weight: 800;
+}
+
+.setup-step-pill strong,
+.setup-card-number {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #0f766e 0%, #2563eb 100%);
+  color: #fff;
+  font-weight: 900;
+}
+
+.setup-safety-alert {
+  border-radius: 1rem;
+}
+
 .setup-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.5rem;
 }
 
+.setup-form-card {
+  overflow: hidden;
+  border-radius: 1rem;
+}
+
+.setup-form-card > div:first-child {
+  background: linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%);
+}
+
 .setup-title {
+  display: flex;
   align-items: center;
+  gap: 0.75rem;
 }
 
 .easy-form {
@@ -1106,13 +1207,20 @@ a:focus-visible {
 .easy-form input,
 .easy-form select {
   width: 100%;
-  min-height: 3.5rem;
+  min-height: 3.75rem;
   padding: 0 1rem;
   border: 1px solid #cbd5e1;
   border-radius: 0.75rem;
   background: #fff;
   color: var(--brand-ink);
   font-size: 1rem;
+}
+
+.field-helper {
+  margin: 0.4rem 0 0;
+  color: #64748b;
+  font-size: 0.95rem;
+  line-height: 1.45;
 }
 
 .simple-tip {
@@ -1139,11 +1247,13 @@ a:focus-visible {
   gap: 0.25rem 0.875rem;
   align-items: center;
   text-align: left;
-  padding: 1rem;
+  min-height: 5.5rem;
+  padding: 1.1rem;
   border: 1px solid #e5e7eb;
   border-radius: 0.75rem;
   background: #fff;
   color: var(--brand-ink);
+  transition: all 180ms ease;
 }
 
 .payout-choice span {
@@ -1156,6 +1266,20 @@ a:focus-visible {
 .payout-choice.is-selected {
   border-color: #0f766e;
   background: #ecfdf5;
+  box-shadow: inset 0 0 0 1px #0f766e;
+}
+
+.payout-choice:hover {
+  border-color: #99f6e4;
+  background: #f8fffc;
+}
+
+.setup-review-card {
+  overflow: hidden;
+  border-radius: 1rem;
+  background:
+    linear-gradient(135deg, #0f2f4a 0%, #0f766e 100%);
+  color: #fff;
 }
 
 .setup-review-card > div {
@@ -1173,13 +1297,13 @@ a:focus-visible {
 
 .setup-review-copy h2 {
   margin: 0 0 0.25rem;
-  color: var(--brand-ink);
+  color: #fff;
   font-size: 1.35rem;
 }
 
 .setup-review-copy p {
   margin: 0;
-  color: #525252;
+  color: #d1fae5;
   line-height: 1.5;
 }
 
@@ -1242,6 +1366,7 @@ a:focus-visible {
   .home-quickstart-inner,
   .home-trust-inner,
   .friendly-grid,
+  .setup-hero,
   .setup-grid {
     grid-template-columns: 1fr;
   }
@@ -1286,6 +1411,10 @@ a:focus-visible {
   }
 
   .quote-form {
+    grid-template-columns: 1fr;
+  }
+
+  .setup-stepper {
     grid-template-columns: 1fr;
   }
 
