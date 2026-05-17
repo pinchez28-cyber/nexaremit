@@ -272,6 +272,16 @@ a:focus-visible {
   color: #516172;
 }
 
+.brand-mark {
+  flex: 0 0 auto;
+}
+
+.brand-wordmark {
+  display: block;
+  font-size: 1.45rem;
+  letter-spacing: 0;
+}
+
 .logo-tagline {
   font-size: 0.75rem;
   line-height: 1rem;
@@ -1123,6 +1133,15 @@ a:focus-visible {
 @media (max-width: 640px) {
   .header-actions {
     display: none;
+  }
+
+  .brand-mark {
+    width: 68px;
+    height: auto;
+  }
+
+  .brand-wordmark {
+    font-size: 1.2rem;
   }
 
   .quote-form {
