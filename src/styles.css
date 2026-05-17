@@ -856,8 +856,8 @@ a:focus-visible {
 }
 
 .home-visual {
-  position: relative;
-  min-height: 30rem;
+  display: grid;
+  gap: 1rem;
   border-radius: 1.25rem;
 }
 
@@ -873,11 +873,10 @@ a:focus-visible {
 }
 
 .home-transfer-card {
-  position: absolute;
-  left: 50%;
-  bottom: -1.5rem;
-  transform: translateX(-50%);
-  width: min(22rem, calc(100% - 1rem));
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 0 1rem;
   padding: 1.25rem;
   border: 0;
   overflow: hidden;
@@ -890,7 +889,7 @@ a:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 1rem;
+  margin: 0;
   padding: 0.55rem 0.75rem;
   border-radius: 9999px;
   background: #ecfdf5;
@@ -904,8 +903,8 @@ a:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem 0;
-  border-bottom: 1px solid #e5e7eb;
+  padding: 0.25rem 0;
+  border-bottom: 0;
   color: #525252;
   font-size: 1rem;
 }
@@ -919,8 +918,9 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: 0.625rem;
-  margin-top: 1.25rem;
-  padding: 1rem;
+  grid-column: 1 / -1;
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
   border-radius: 0.75rem;
   background: #ecfdf5;
   color: #0f766e;
@@ -1384,8 +1384,8 @@ a:focus-visible {
   }
 
   .home-transfer-card {
-    left: 50%;
-    bottom: -1.5rem;
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
   .app-footer-inner {
@@ -1464,10 +1464,7 @@ a:focus-visible {
   }
 
   .home-transfer-card {
-    position: static;
-    width: 100%;
-    margin-top: 1rem;
-    transform: none;
+    grid-template-columns: 1fr;
   }
 
   .home-action-card {
