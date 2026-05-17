@@ -1,12 +1,14 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { CheckCircle, ReceiptText } from "lucide-react";
 import { getPaymentIntentLabel, getPaymentMethodLabel } from "@/lib/payment-labels";
+import { saveTransferRecord } from "@/lib/transfer-records";
 
 export default function TransferSuccess({ transferData, onDone }) {
+  const record = useMemo(() => saveTransferRecord(transferData), [transferData]);
   const paymentIntentId = getPaymentIntentLabel(transferData.paymentMethod);
   const paymentLabel = getPaymentMethodLabel(transferData.paymentMethod);
   const hasStripeAuthorization = Boolean(paymentIntentId);
@@ -27,7 +29,7 @@ export default function TransferSuccess({ transferData, onDone }) {
           <div className="receipt-preview">
             <ReceiptText className="w-5 h-5 text-blue-700" />
             <div className="text-left">
-              <p className="font-semibold text-primary">Sandbox Receipt AS-{Date.now().toString().slice(-6)}</p>
+              <p className="font-semibold text-primary">Sandbox Receipt {record.id}</p>
               <p className="text-sm text-neutral-500">
                 {hasStripeAuthorization ? `Stripe test PaymentIntent: ${paymentIntentId}` : "Real providers are not active yet."}
               </p>
@@ -35,6 +37,9 @@ export default function TransferSuccess({ transferData, onDone }) {
           </div>
           <div className="flex flex-col sm:flex-row justify-center gap-3">
             <Button onClick={onDone}>Send Another</Button>
+            <Link to={`/Receipt/${record.id}`}>
+              <Button variant="outline" className="w-full">View Receipt</Button>
+            </Link>
             <Link to={createPageUrl("Dashboard")}>
               <Button variant="outline" className="w-full">Dashboard</Button>
             </Link>

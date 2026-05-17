@@ -9,6 +9,7 @@ const navItems = [
   { label: "Easy Setup", to: createPageUrl("Setup") },
   { label: "Dashboard", to: createPageUrl("Dashboard") },
   { label: "Send", to: createPageUrl("SendMoney") },
+  { label: "History", to: createPageUrl("History") },
   { label: "Recipients", to: createPageUrl("Recipients") },
   { label: "Integrations", to: createPageUrl("Integrations") },
   { label: "Compliance", to: createPageUrl("SecurityCompliance") }

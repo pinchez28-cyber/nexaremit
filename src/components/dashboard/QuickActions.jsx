@@ -2,12 +2,13 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { ListChecks, PlugZap, ReceiptText, Send, ShieldCheck } from "lucide-react";
+import { History, ListChecks, PlugZap, ReceiptText, Send, ShieldCheck } from "lucide-react";
 
 export default function QuickActions() {
   const actions = [
     { label: "Easy Setup", helper: "Simple sender and receiver setup", icon: ReceiptText, to: "Setup" },
     { label: "Quote Transfer", helper: "Fees, delivery, and received amount", icon: Send, to: "SendMoney" },
+    { label: "Transfer History", helper: "Receipts and sandbox status tracking", icon: History, to: "History" },
     { label: "Provider Rails", helper: "KYC, payment, exchange, settlement, payout", icon: PlugZap, to: "Integrations" },
     { label: "Launch Checklist", helper: "What must exist before go-live", icon: ListChecks, to: "LaunchChecklist" },
     { label: "Compliance Status", helper: "KYC, AML, privacy, and fraud gaps", icon: ShieldCheck, to: "SecurityCompliance" }
