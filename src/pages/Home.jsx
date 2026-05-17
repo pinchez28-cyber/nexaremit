@@ -52,8 +52,21 @@ export default function Home() {
               ))}
             </div>
           </div>
-          <div className="home-visual">
-            <img src="/assets/nexaremit-family-hero.png" alt="Family using a phone to review a money transfer" />
+          <div className="home-visual home-story">
+            <figure className="home-story-card home-story-sender">
+              <img src="/assets/nexaremit-sender.png" alt="Sender using a phone to start a money transfer" />
+              <figcaption>
+                <span>Sender</span>
+                Starts with clear steps
+              </figcaption>
+            </figure>
+            <figure className="home-story-card home-story-receiver">
+              <img src="/assets/nexaremit-receiver.png" alt="Receiver smiling after getting a transfer message" />
+              <figcaption>
+                <span>Receiver</span>
+                Gets a simple message
+              </figcaption>
+            </figure>
             <div className="home-transfer-card">
               <div className="home-card-label">
                 <Smartphone className="w-5 h-5" />
