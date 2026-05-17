@@ -37,6 +37,11 @@ function canUseStorage() {
   return typeof window !== "undefined" && window.localStorage;
 }
 
+function storeTransferRecords(records) {
+  if (!canUseStorage()) return;
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records.slice(0, 50)));
+}
+
 export function getTransferRecords() {
   if (!canUseStorage()) return starterTransfers;
   const stored = window.localStorage.getItem(STORAGE_KEY);
@@ -56,11 +61,11 @@ export function getTransferRecord(id) {
   return getTransferRecords().find((record) => record.id === id);
 }
 
-export function saveTransferRecord(transferData) {
+export function buildTransferRecord(transferData) {
   const quote = calculateSandboxQuote(transferData);
   const paymentIntentId = getPaymentIntentLabel(transferData.paymentMethod);
   const hasPayment = Boolean(paymentIntentId);
-  const record = {
+  return {
     id: `NX-${Date.now().toString().slice(-8)}`,
     createdAt: new Date().toISOString(),
     recipientName: transferData.recipient?.name || "Unknown receiver",
@@ -78,13 +83,71 @@ export function saveTransferRecord(transferData) {
       { label: "Payout not sent in sandbox mode", at: new Date().toISOString() }
     ]
   };
+}
 
+export function saveTransferRecord(transferDataOrRecord) {
+  const record = transferDataOrRecord?.recipient
+    ? buildTransferRecord(transferDataOrRecord)
+    : transferDataOrRecord;
+
+  if (!record) return null;
   if (canUseStorage()) {
     const records = getTransferRecords();
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([record, ...records].slice(0, 25)));
+    const withoutDuplicate = records.filter((item) => item.id !== record.id);
+    storeTransferRecords([record, ...withoutDuplicate]);
   }
 
   return record;
+}
+
+export async function fetchTransferRecords() {
+  const localRecords = getTransferRecords();
+  try {
+    const response = await fetch("/api/transfer-records");
+    if (!response.ok) throw new Error("Could not load transfer records");
+    const result = await response.json();
+    if (!result.configured) return localRecords;
+    storeTransferRecords(result.records);
+    return result.records;
+  } catch {
+    return localRecords;
+  }
+}
+
+export async function fetchTransferRecord(id) {
+  const localRecord = getTransferRecord(id);
+  try {
+    const response = await fetch(`/api/transfer-records?id=${encodeURIComponent(id)}`);
+    if (!response.ok) throw new Error("Could not load transfer receipt");
+    const result = await response.json();
+    if (!result.configured) return localRecord;
+    if (result.record) saveTransferRecord(result.record);
+    return result.record || localRecord;
+  } catch {
+    return localRecord;
+  }
+}
+
+export async function persistTransferRecord(transferDataOrRecord) {
+  const record = transferDataOrRecord?.recipient
+    ? buildTransferRecord(transferDataOrRecord)
+    : transferDataOrRecord;
+  saveTransferRecord(record);
+
+  try {
+    const response = await fetch("/api/transfer-records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ record })
+    });
+    if (!response.ok) throw new Error("Could not save transfer record");
+    const result = await response.json();
+    const savedRecord = result.record || record;
+    saveTransferRecord(savedRecord);
+    return savedRecord;
+  } catch {
+    return record;
+  }
 }
 
 export function formatTransferDate(dateValue) {

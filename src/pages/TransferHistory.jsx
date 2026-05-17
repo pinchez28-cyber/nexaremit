@@ -1,14 +1,24 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createPageUrl } from "@/utils";
-import { formatTransferDate, getTransferRecords, transferStatuses } from "@/lib/transfer-records";
+import { fetchTransferRecords, formatTransferDate, getTransferRecords, transferStatuses } from "@/lib/transfer-records";
 import { ReceiptText, Send } from "lucide-react";
 
 export default function TransferHistory() {
-  const records = getTransferRecords();
+  const [records, setRecords] = useState(() => getTransferRecords());
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchTransferRecords().then((nextRecords) => {
+      if (isMounted) setRecords(nextRecords);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-neutral-50 p-6">

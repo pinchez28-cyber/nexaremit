@@ -1,15 +1,25 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createPageUrl } from "@/utils";
-import { formatTransferDate, getTransferRecord, transferStatuses } from "@/lib/transfer-records";
+import { fetchTransferRecord, formatTransferDate, getTransferRecord, transferStatuses } from "@/lib/transfer-records";
 import { ArrowLeft, CheckCircle, ReceiptText } from "lucide-react";
 
 export default function Receipt() {
   const { id } = useParams();
-  const record = getTransferRecord(id);
+  const [record, setRecord] = useState(() => getTransferRecord(id));
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchTransferRecord(id).then((nextRecord) => {
+      if (isMounted) setRecord(nextRecord);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
 
   if (!record) {
     return (

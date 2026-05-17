@@ -12,6 +12,9 @@ This backend is sandbox-only. It does not move real money.
 - `POST /api/quotes` - create provider-ready transfer quote
 - `POST /api/transfers` - create sandbox transfer after safety checks
 - `POST /api/create-payment-intent` - create Stripe test PaymentIntent after safety checks
+- `GET /api/transfer-records` - list saved sandbox transfer records
+- `GET /api/transfer-records?id=NX-...` - load one saved sandbox receipt
+- `POST /api/transfer-records` - save a sandbox transfer record
 - `POST /api/webhooks-stripe` - Stripe webhook placeholder
 
 ## Safety Checks Before Transfer Creation
@@ -56,3 +59,12 @@ Provider categories:
 - Verify webhook signatures before processing provider events.
 - Store transfer state, audit logs, and provider references in a database before production.
 - Get legal/licensing review before enabling real transactions.
+
+## Supabase Transfer Records
+
+Use `supabase/schema.sql` in the Supabase SQL editor to create the transfer record tables. Then add these server-only Vercel environment variables:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+The React app never receives the service role key. Browser screens call `/api/transfer-records`, and that serverless route writes records with the server-only Supabase client. If Supabase is not configured yet, NexaRemit keeps using local sandbox records so the demo remains usable.
