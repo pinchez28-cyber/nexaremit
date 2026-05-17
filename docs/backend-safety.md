@@ -11,6 +11,7 @@ This backend is sandbox-only. It does not move real money.
 - `GET /api/recipients` - sandbox recipient list
 - `POST /api/quotes` - create provider-ready transfer quote
 - `POST /api/transfers` - create sandbox transfer after safety checks
+- `POST /api/create-payment-intent` - create Stripe test PaymentIntent after safety checks
 - `POST /api/webhooks-stripe` - Stripe webhook placeholder
 
 ## Safety Checks Before Transfer Creation
@@ -51,6 +52,7 @@ Provider categories:
 - Use hosted card/bank collection such as Stripe Payment Element, Adyen Drop-in, Plaid Link, or Stripe Financial Connections.
 - Keep all API secrets server-side only.
 - Do not use `VITE_*` for provider secrets.
+- `VITE_STRIPE_PUBLISHABLE_KEY` is safe for the browser, but `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` must stay server-side.
 - Verify webhook signatures before processing provider events.
 - Store transfer state, audit logs, and provider references in a database before production.
 - Get legal/licensing review before enabling real transactions.

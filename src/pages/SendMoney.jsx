@@ -47,7 +47,7 @@ export default function SendMoney() {
       case STEPS.AMOUNT:
         return <AmountInput recipient={transferData.recipient} amount={transferData.amount} currency={transferData.currency} purpose={transferData.purpose} onAmountChange={updateTransferData} onNext={nextStep} onBack={previousStep} />;
       case STEPS.PAYMENT:
-        return <PaymentMethod selectedMethod={transferData.paymentMethod} onSelectMethod={(paymentMethod) => { updateTransferData({ paymentMethod }); nextStep(); }} onBack={previousStep} />;
+        return <PaymentMethod selectedMethod={typeof transferData.paymentMethod === "string" ? transferData.paymentMethod : transferData.paymentMethod?.type} transferData={transferData} onSelectMethod={(paymentMethod) => { updateTransferData({ paymentMethod }); nextStep(); }} onBack={previousStep} />;
       case STEPS.REVIEW:
         return <ReviewTransfer transferData={transferData} onConfirm={nextStep} onBack={previousStep} />;
       case STEPS.SUCCESS:
