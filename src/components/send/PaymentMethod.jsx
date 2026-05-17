@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { CreditCard, Landmark, Wallet } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertTriangle, CreditCard, Landmark, Wallet } from "lucide-react";
 import StripePaymentPanel from "./StripePaymentPanel";
 
 const methods = [
@@ -11,13 +12,21 @@ const methods = [
 ];
 
 export default function PaymentMethod({ selectedMethod, transferData, onSelectMethod, onBack }) {
-  const [localMethod, setLocalMethod] = useState(selectedMethod || "card");
+  const [localMethod, setLocalMethod] = useState(selectedMethod || null);
 
   return (
     <Card className="shadow-premium border-0">
       <CardHeader>
-        <CardTitle>Payment Method</CardTitle>
+        <CardTitle>Choose Payment Method</CardTitle>
       </CardHeader>
+      <CardContent className="pt-3">
+        <Alert className="border-yellow-200 bg-yellow-50">
+          <AlertTriangle className="w-5 h-5 text-yellow-600" />
+          <AlertDescription className="text-yellow-800">
+            Choose how this transfer will be funded. Use Stripe test cards only; do not enter real card or bank details.
+          </AlertDescription>
+        </Alert>
+      </CardContent>
       <CardContent className="grid sm:grid-cols-3 gap-4">
         {methods.map(({ id, label, icon: Icon }) => (
           <button
@@ -32,6 +41,11 @@ export default function PaymentMethod({ selectedMethod, transferData, onSelectMe
         ))}
       </CardContent>
       <CardContent className="pt-3">
+        {!localMethod && (
+          <div className="payment-choice-empty">
+            Select debit card, bank account, or digital wallet to continue.
+          </div>
+        )}
         {localMethod === "card" && (
           <StripePaymentPanel transferData={transferData} onAuthorized={(paymentIntentId) => onSelectMethod({ type: "card", paymentIntentId })} />
         )}
@@ -51,7 +65,7 @@ export default function PaymentMethod({ selectedMethod, transferData, onSelectMe
       <CardFooter className="justify-between">
         <Button variant="outline" onClick={onBack}>Back</Button>
         {localMethod !== "card" && (
-          <Button onClick={() => onSelectMethod({ type: localMethod, status: "sandbox_selected" })}>Continue</Button>
+          <Button disabled={!localMethod} onClick={() => onSelectMethod({ type: localMethod, status: "sandbox_selected" })}>Continue</Button>
         )}
       </CardFooter>
     </Card>

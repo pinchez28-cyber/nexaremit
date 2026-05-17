@@ -534,6 +534,17 @@ a:focus-visible {
   font-weight: 700;
 }
 
+.payment-choice-empty,
+.payment-loading {
+  padding: 1rem;
+  border: 1px dashed #bfdbfe;
+  border-radius: 0.75rem;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 800;
+  text-align: center;
+}
+
 .integration-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

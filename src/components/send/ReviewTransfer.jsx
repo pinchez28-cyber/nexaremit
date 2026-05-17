@@ -12,6 +12,10 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
   const [preparedTransfer, setPreparedTransfer] = useState(null);
   const quote = preparedTransfer || fallbackQuote;
   const hasStripeAuthorization = Boolean(transferData.paymentMethod?.paymentIntentId);
+  const hasPaymentMethod = Boolean(transferData.paymentMethod?.type || transferData.paymentMethod);
+  const paymentLabel = transferData.paymentMethod?.type
+    ? transferData.paymentMethod.type.replace("_", " ")
+    : "Not selected";
 
   useEffect(() => {
     let isMounted = true;
@@ -46,6 +50,14 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
             </AlertDescription>
           </Alert>
         )}
+        {!hasPaymentMethod && (
+          <Alert className="border-red-200 bg-red-50">
+            <AlertTriangle className="w-5 h-5 text-red-600" />
+            <AlertDescription className="text-red-800">
+              A payment method is required before review. Go back and choose how the transfer will be funded.
+            </AlertDescription>
+          </Alert>
+        )}
         <div className="flex justify-between border-b border-neutral-100 pb-3">
           <span className="text-neutral-600">Recipient</span>
           <span className="font-semibold">{transferData.recipient?.name}</span>
@@ -53,6 +65,10 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
         <div className="flex justify-between border-b border-neutral-100 pb-3">
           <span className="text-neutral-600">Destination</span>
           <span className="font-semibold">{transferData.recipient?.country} - {transferData.recipient?.method}</span>
+        </div>
+        <div className="flex justify-between border-b border-neutral-100 pb-3">
+          <span className="text-neutral-600">Payment method</span>
+          <span className="font-semibold">{paymentLabel}</span>
         </div>
         <div className="flex justify-between border-b border-neutral-100 pb-3">
           <span className="text-neutral-600">Send amount</span>
@@ -93,7 +109,7 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
       </CardContent>
       <CardFooter className="justify-between">
         <Button variant="outline" onClick={onBack}>Back</Button>
-        <Button onClick={onConfirm}>{hasStripeAuthorization ? "Confirm Test Transfer" : "Create Sandbox Record"}</Button>
+        <Button disabled={!hasPaymentMethod} onClick={onConfirm}>{hasStripeAuthorization ? "Confirm Test Transfer" : "Create Sandbox Record"}</Button>
       </CardFooter>
     </Card>
   );
