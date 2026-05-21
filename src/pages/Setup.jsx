@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { createPageUrl } from "@/utils";
-import { ArrowRight, CheckCircle, CreditCard, FileCheck, Home, Landmark, Phone, ShieldCheck, Smartphone, UserRound } from "lucide-react";
+import { ArrowRight, CheckCircle, CreditCard, ExternalLink, FileCheck, Home, Landmark, Loader2, Phone, ShieldCheck, Smartphone, UserRound } from "lucide-react";
 
 const payoutOptions = [
   { id: "bank", label: "Bank account", icon: Landmark, helper: "Best for receivers who use a bank." },
@@ -26,6 +26,36 @@ const setupNeeds = [
 
 export default function Setup() {
   const [payoutMethod, setPayoutMethod] = useState("mobile");
+  const [kycState, setKycState] = useState({ status: "idle", message: "" });
+
+  const startKyc = async () => {
+    setKycState({ status: "loading", message: "Preparing identity check..." });
+
+    try {
+      const response = await fetch("/api/kyc-start", { method: "POST" });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setKycState({
+          status: "error",
+          message: data?.kyc?.error || "KYC provider is not ready yet."
+        });
+        return;
+      }
+
+      setKycState({
+        status: data?.kyc?.verificationUrl ? "ready" : "sandbox",
+        message: data?.kyc?.message || "Identity check prepared.",
+        verificationUrl: data?.kyc?.verificationUrl,
+        inquiryId: data?.kyc?.inquiryId
+      });
+    } catch {
+      setKycState({
+        status: "error",
+        message: "Could not reach the KYC service. Try again after deployment finishes."
+      });
+    }
+  };
 
   return (
     <div className="setup-page">
@@ -64,6 +94,40 @@ export default function Setup() {
             Prototype mode: use test details only. A live service must verify identity, validate accounts, and check sanctions lists before real transfers.
           </AlertDescription>
         </Alert>
+
+        <Card className="kyc-start-card shadow-premium border-0">
+          <CardContent className="p-6">
+            <div className="kyc-start-copy">
+              <div className="setup-helper-icon">
+                <ShieldCheck className="w-7 h-7" />
+              </div>
+              <div>
+                <h2>Identity check comes before real transfers</h2>
+                <p>
+                  Start here when Persona sandbox credentials are added. NexaRemit will keep transfers blocked until KYC is approved by the backend.
+                </p>
+                {kycState.message && (
+                  <div className={`kyc-message ${kycState.status === "error" ? "is-error" : ""}`}>
+                    {kycState.message}
+                    {kycState.inquiryId && <span>Reference: {kycState.inquiryId}</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="kyc-actions">
+              <Button type="button" onClick={startKyc} disabled={kycState.status === "loading"} className="setup-next-button">
+                {kycState.status === "loading" ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
+                Start KYC Check
+              </Button>
+              {kycState.verificationUrl && (
+                <a href={kycState.verificationUrl} target="_blank" rel="noreferrer" className="kyc-link">
+                  Open Persona
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="setup-grid">
           <Card className="setup-form-card shadow-premium border-0">

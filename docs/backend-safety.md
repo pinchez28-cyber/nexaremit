@@ -8,6 +8,7 @@ This backend is sandbox-only. It does not move real money.
 
 - `GET /api/health` - service health check
 - `GET /api/kyc` - sandbox KYC status
+- `POST /api/kyc-start` - create or prepare a Persona-compatible KYC inquiry
 - `GET /api/recipients` - sandbox recipient list
 - `POST /api/quotes` - create provider-ready transfer quote
 - `POST /api/transfers` - create sandbox transfer after safety checks
@@ -36,7 +37,7 @@ The backend warns when:
 
 ## KYC Provider Readiness
 
-NexaRemit has a sandbox KYC slot at `GET /api/kyc`. The next production step is to replace the sandbox response with a real identity provider such as Persona, Veriff, Onfido, Sumsub, or Alloy.
+NexaRemit has a sandbox KYC status slot at `GET /api/kyc` and a Persona-compatible start endpoint at `POST /api/kyc-start`. The next production step is to add provider credentials and store inquiry results in the database.
 
 For Persona, add these Vercel environment variables only on the server side:
 
@@ -49,6 +50,12 @@ For Persona, add these Vercel environment variables only on the server side:
 Before live transfers, the backend must create or resume a KYC inquiry, store the provider inquiry ID on the user record, verify Persona webhook signatures, update the user's KYC status from webhook events, and block all real transfer creation until the status is approved.
 
 Do not trust browser-only KYC status. The transfer API must always read KYC status from the server/database.
+
+Current behavior:
+
+- Without Persona credentials, `POST /api/kyc-start` returns a sandbox reference and no live verification link.
+- With Persona credentials, `POST /api/kyc-start` creates a Persona inquiry and returns the inquiry ID plus the provider verification link/token when Persona provides it.
+- Live transfer creation must remain blocked until webhook-confirmed KYC status is stored server-side.
 
 ## Provider Slots
 

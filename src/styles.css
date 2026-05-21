@@ -1170,6 +1170,80 @@ a:focus-visible {
   border-radius: 1rem;
 }
 
+.kyc-start-card {
+  overflow: hidden;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%);
+}
+
+.kyc-start-card > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.kyc-start-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.kyc-start-copy h2 {
+  margin: 0 0 0.35rem;
+  color: var(--brand-ink);
+  font-size: 1.35rem;
+}
+
+.kyc-start-copy p {
+  margin: 0;
+  color: #435266;
+  line-height: 1.55;
+}
+
+.kyc-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+  flex: 0 0 auto;
+}
+
+.kyc-link {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  border: 1px solid #0f766e;
+  border-radius: 0.75rem;
+  color: #0f766e;
+  font-weight: 800;
+}
+
+.kyc-message {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 1rem;
+  padding: 0.875rem 1rem;
+  border-radius: 0.75rem;
+  background: #fffaf0;
+  color: #92400e;
+  font-weight: 700;
+}
+
+.kyc-message span {
+  color: #64748b;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.kyc-message.is-error {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
 .setup-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1450,6 +1524,12 @@ a:focus-visible {
   }
 
   .setup-review-card > div {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .kyc-start-card > div,
+  .kyc-start-copy {
     flex-direction: column;
     align-items: stretch;
   }
