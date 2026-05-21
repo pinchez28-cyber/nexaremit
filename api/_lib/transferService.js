@@ -6,7 +6,7 @@ export async function createTransferQuote({ user, amount, currency = "USD", reci
   const receiveCurrency = recipient?.receiveCurrency || "NGN";
   const [kyc, sanctions, funding, quote, settlement, payout] = await Promise.all([
     providerRegistry.verifyKyc({ user }),
-    providerRegistry.screenSanctions({ recipient }),
+    providerRegistry.screenSanctions({ user, recipient }),
     providerRegistry.createFundingIntent({ amount, currency }),
     providerRegistry.createExchangeQuote({ amount, currency, receiveCurrency }),
     providerRegistry.prepareSettlement({ amount, currency, receiveCurrency }),
@@ -14,7 +14,7 @@ export async function createTransferQuote({ user, amount, currency = "USD", reci
   ]);
 
   const fee = Number(amount || 0) > 0 ? Math.max(2.99, Number(amount) * 0.012) : 0;
-  const safety = runTransferSafetyChecks({ user, amount, currency, recipient, quote, kyc });
+  const safety = runTransferSafetyChecks({ user, amount, currency, recipient, quote, kyc, sanctions });
 
   return {
     id: `quote_${Date.now()}`,

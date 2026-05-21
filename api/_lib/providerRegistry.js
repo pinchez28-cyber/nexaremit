@@ -1,4 +1,5 @@
 import { getKycRecord } from "./kycRecords.js";
+import { screenSanctionsSubject } from "./sanctionsRecords.js";
 
 const sandboxRates = {
   USD: { NGN: 1650, KES: 129, GHS: 12.1, INR: 83.2, PHP: 57.5, MXN: 17.1, BRL: 5.1, PKR: 278, BDT: 117, ZAR: 18.2, EGP: 48.5, MAD: 10.0 },
@@ -29,12 +30,14 @@ export const providerRegistry = {
     };
   },
 
-  async screenSanctions({ recipient }) {
-    const requiresReview = recipient?.risk === "Review required";
+  async screenSanctions({ user, recipient }) {
+    const screening = await screenSanctionsSubject({ user, recipient });
+
     return {
-      provider: process.env.SANCTIONS_PROVIDER || "sandbox-screening",
-      status: requiresReview ? "manual_review" : "clear",
-      reference: `screen_${Date.now()}`
+      provider: screening.record.provider,
+      status: screening.record.status,
+      reference: screening.record.id,
+      source: screening.configured ? "database" : "sandbox"
     };
   },
 

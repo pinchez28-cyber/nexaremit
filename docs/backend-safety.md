@@ -9,6 +9,7 @@ This backend is sandbox-only. It does not move real money.
 - `GET /api/health` - service health check
 - `GET /api/kyc` - sandbox KYC status
 - `POST /api/kyc-start` - create or prepare a Persona-compatible KYC inquiry
+- `POST /api/sanctions-screening` - create or reuse a sender/recipient sanctions screening result
 - `GET /api/recipients` - sandbox recipient list
 - `POST /api/quotes` - create provider-ready transfer quote
 - `POST /api/transfers` - create sandbox transfer after safety checks
@@ -25,6 +26,7 @@ The backend blocks a transfer when:
 
 - user is not authenticated
 - sender KYC is not approved
+- sanctions screening is not clear
 - recipient is missing
 - corridor is not enabled
 - transfer amount is not positive
@@ -73,6 +75,17 @@ Provider categories:
 - FX/exchange rate locking
 - settlement rail such as bank, stablecoin, Ripple Payments, or XRPL
 - payout to bank, mobile money, wallet, or cash pickup
+
+## Sanctions and AML Screening
+
+`POST /api/sanctions-screening` creates a stable screening ID from the sender, receiver, country, corridor, and payout method. When Supabase is configured, results are stored in `sanctions_screenings` and reused by the transfer safety engine.
+
+Current behavior:
+
+- Sandbox recipients with `risk: \"Review required\"` create a `manual_review` screening.
+- Other sandbox recipients create a `clear` screening.
+- Transfer creation is blocked unless the screening status is `clear`.
+- A production AML provider should replace the sandbox result with real watchlist, sanctions, PEP, adverse media, and corridor-risk checks.
 
 ## Security Rules
 
