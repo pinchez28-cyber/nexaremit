@@ -1,4 +1,5 @@
 import { getSupabaseAdminClient } from "./supabaseClient.js";
+import { isMissingTableError } from "./supabaseErrors.js";
 
 const APPROVED_STATUSES = new Set(["approved", "completed", "passed"]);
 
@@ -53,6 +54,17 @@ export async function getKycRecord(user) {
     .eq("user_id", user.id)
     .maybeSingle();
 
+  if (isMissingTableError(error)) {
+    return {
+      configured: false,
+      schemaReady: false,
+      record: {
+        userId: user.id,
+        provider: process.env.KYC_PROVIDER || "sandbox-kyc",
+        status: normalizeKycStatus(user.kycStatus)
+      }
+    };
+  }
   if (error) throw error;
 
   return {
@@ -83,6 +95,9 @@ export async function upsertKycRecord(record) {
     .select("*")
     .single();
 
+  if (isMissingTableError(error)) {
+    return { configured: false, schemaReady: false, record: normalized };
+  }
   if (error) throw error;
   return { configured: true, record: fromKycRow(data) };
 }

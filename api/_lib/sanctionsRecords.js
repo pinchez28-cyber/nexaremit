@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { getSupabaseAdminClient } from "./supabaseClient.js";
+import { isMissingTableError } from "./supabaseErrors.js";
 
 const CLEAR_STATUSES = new Set(["clear", "approved", "passed"]);
 
@@ -78,6 +79,7 @@ export async function upsertSanctionsRecord(record) {
     .select("*")
     .single();
 
+  if (isMissingTableError(error)) return { configured: false, schemaReady: false, record: normalized };
   if (error) throw error;
   return { configured: true, record: fromScreeningRow(data) };
 }
@@ -92,6 +94,7 @@ export async function getSanctionsRecord(screeningId) {
     .eq("id", screeningId)
     .maybeSingle();
 
+  if (isMissingTableError(error)) return { configured: false, schemaReady: false, record: null };
   if (error) throw error;
   return { configured: true, record: data ? fromScreeningRow(data) : null };
 }
