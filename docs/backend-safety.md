@@ -34,6 +34,22 @@ The backend warns when:
 - transfer is large enough for enhanced due diligence
 - recipient requires manual compliance review
 
+## KYC Provider Readiness
+
+NexaRemit has a sandbox KYC slot at `GET /api/kyc`. The next production step is to replace the sandbox response with a real identity provider such as Persona, Veriff, Onfido, Sumsub, or Alloy.
+
+For Persona, add these Vercel environment variables only on the server side:
+
+- `KYC_PROVIDER=persona`
+- `PERSONA_API_KEY`
+- `PERSONA_TEMPLATE_ID`
+- `PERSONA_ENVIRONMENT=sandbox`
+- `PERSONA_WEBHOOK_SECRET`
+
+Before live transfers, the backend must create or resume a KYC inquiry, store the provider inquiry ID on the user record, verify Persona webhook signatures, update the user's KYC status from webhook events, and block all real transfer creation until the status is approved.
+
+Do not trust browser-only KYC status. The transfer API must always read KYC status from the server/database.
+
 ## Provider Slots
 
 Real integrations should replace the sandbox provider registry in:
