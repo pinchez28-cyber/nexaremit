@@ -16,7 +16,7 @@ const allowedCorridors = new Set([
   "EU-MA"
 ]);
 
-export function runTransferSafetyChecks({ user, amount, currency, recipient, quote, kyc, sanctions }) {
+export function runTransferSafetyChecks({ user, amount, currency, recipient, quote, kyc, sanctions, risk }) {
   const numericAmount = Number(amount || 0);
   const failures = [];
   const warnings = [];
@@ -26,6 +26,8 @@ export function runTransferSafetyChecks({ user, amount, currency, recipient, quo
   if (!user?.id) failures.push("User must be authenticated.");
   if (kyc?.status !== "approved") failures.push("Sender KYC must be approved before transfer creation.");
   if (sanctions?.status !== "clear") failures.push("Sanctions screening must be clear before transfer creation.");
+  if (risk?.status === "blocked") failures.push("Fraud risk check blocked this transfer.");
+  if (risk?.status === "manual_review") warnings.push("Fraud risk check requires manual review before release.");
   if (!recipient?.name) failures.push("Recipient is required.");
   if (!allowedCorridors.has(corridor)) failures.push(`Corridor ${corridor} is not enabled.`);
   if (!numericAmount || numericAmount <= 0) failures.push("Transfer amount must be greater than zero.");

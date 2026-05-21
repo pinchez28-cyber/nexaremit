@@ -44,6 +44,19 @@ create table if not exists public.sanctions_screenings (
 create index if not exists sanctions_screenings_user_status_idx
   on public.sanctions_screenings (user_id, status, updated_at desc);
 
+create table if not exists public.risk_assessments (
+  id text primary key,
+  user_id text not null,
+  status text not null,
+  score integer not null default 0,
+  reasons jsonb not null default '[]'::jsonb,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists risk_assessments_user_created_idx
+  on public.risk_assessments (user_id, created_at desc);
+
 create table if not exists public.transfer_audit_logs (
   id uuid primary key default gen_random_uuid(),
   transfer_id text references public.transfer_records(id) on delete cascade,
@@ -57,6 +70,7 @@ create table if not exists public.transfer_audit_logs (
 alter table public.transfer_records enable row level security;
 alter table public.kyc_records enable row level security;
 alter table public.sanctions_screenings enable row level security;
+alter table public.risk_assessments enable row level security;
 alter table public.transfer_audit_logs enable row level security;
 
 -- NexaRemit writes through serverless API routes with SUPABASE_SERVICE_ROLE_KEY.

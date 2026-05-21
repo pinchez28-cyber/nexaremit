@@ -10,6 +10,7 @@ This backend is sandbox-only. It does not move real money.
 - `GET /api/kyc` - sandbox KYC status
 - `POST /api/kyc-start` - create or prepare a Persona-compatible KYC inquiry
 - `POST /api/sanctions-screening` - create or reuse a sender/recipient sanctions screening result
+- `POST /api/risk-check` - create a rule-based fraud and velocity risk assessment
 - `GET /api/recipients` - sandbox recipient list
 - `POST /api/quotes` - create provider-ready transfer quote
 - `POST /api/transfers` - create sandbox transfer after safety checks
@@ -27,6 +28,7 @@ The backend blocks a transfer when:
 - user is not authenticated
 - sender KYC is not approved
 - sanctions screening is not clear
+- fraud risk check blocks the transfer
 - recipient is missing
 - corridor is not enabled
 - transfer amount is not positive
@@ -86,6 +88,22 @@ Current behavior:
 - Other sandbox recipients create a `clear` screening.
 - Transfer creation is blocked unless the screening status is `clear`.
 - A production AML provider should replace the sandbox result with real watchlist, sanctions, PEP, adverse media, and corridor-risk checks.
+
+## Fraud and Risk Checks
+
+`POST /api/risk-check` and transfer creation both run a rule-based risk assessment. The assessment is stored in `risk_assessments` when Supabase is configured.
+
+Current rules score:
+
+- missing user identity
+- KYC not approved
+- sanctions screening not clear
+- large transfer amounts
+- higher-risk corridors
+- repeated transfers in the last 24 hours
+- daily transfer volume above standard limits
+
+Risk status can be `clear`, `manual_review`, or `blocked`. Blocked transfers cannot be created. Manual-review transfers produce warnings and should not be released to payout until an admin review system exists.
 
 ## Security Rules
 

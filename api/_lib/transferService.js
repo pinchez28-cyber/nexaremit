@@ -1,5 +1,6 @@
 import { createAuditEvent } from "./audit.js";
 import { providerRegistry } from "./providerRegistry.js";
+import { assessTransferRisk } from "./riskRecords.js";
 import { runTransferSafetyChecks } from "./safetyEngine.js";
 
 export async function createTransferQuote({ user, amount, currency = "USD", recipient, purpose }) {
@@ -13,8 +14,9 @@ export async function createTransferQuote({ user, amount, currency = "USD", reci
     providerRegistry.createPayoutIntent({ recipient, receiveCurrency })
   ]);
 
+  const risk = await assessTransferRisk({ user, amount, currency, recipient, kyc, sanctions });
   const fee = Number(amount || 0) > 0 ? Math.max(2.99, Number(amount) * 0.012) : 0;
-  const safety = runTransferSafetyChecks({ user, amount, currency, recipient, quote, kyc, sanctions });
+  const safety = runTransferSafetyChecks({ user, amount, currency, recipient, quote, kyc, sanctions, risk: risk.record });
 
   return {
     id: `quote_${Date.now()}`,
@@ -33,6 +35,7 @@ export async function createTransferQuote({ user, amount, currency = "USD", reci
     providers: {
       kyc,
       sanctions,
+      risk: risk.record,
       funding,
       exchange: quote,
       settlement,
