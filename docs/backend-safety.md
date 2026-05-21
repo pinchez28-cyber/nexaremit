@@ -17,6 +17,7 @@ This backend is sandbox-only. It does not move real money.
 - `GET /api/transfer-records?id=NX-...` - load one saved sandbox receipt
 - `POST /api/transfer-records` - save a sandbox transfer record
 - `POST /api/webhooks-stripe` - Stripe webhook placeholder
+- `POST /api/webhooks-persona` - Persona webhook receiver for KYC status updates
 
 ## Safety Checks Before Transfer Creation
 
@@ -55,6 +56,7 @@ Current behavior:
 
 - Without Persona credentials, `POST /api/kyc-start` returns a sandbox reference and no live verification link.
 - With Persona credentials, `POST /api/kyc-start` creates a Persona inquiry and returns the inquiry ID plus the provider verification link/token when Persona provides it.
+- `POST /api/webhooks-persona` verifies the `Persona-Signature` header, reads the inquiry reference ID, and upserts the server-side KYC status.
 - Live transfer creation must remain blocked until webhook-confirmed KYC status is stored server-side.
 
 ## Provider Slots
@@ -91,3 +93,5 @@ Use `supabase/schema.sql` in the Supabase SQL editor to create the transfer reco
 - `SUPABASE_SERVICE_ROLE_KEY`
 
 The React app never receives the service role key. Browser screens call `/api/transfer-records`, and that serverless route writes records with the server-only Supabase client. If Supabase is not configured yet, NexaRemit keeps using local sandbox records so the demo remains usable.
+
+The same schema also creates `kyc_records`. When Supabase is configured, transfer creation reads KYC status from this table. If a sender has no approved KYC record, transfer creation is blocked.

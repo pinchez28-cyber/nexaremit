@@ -1,3 +1,5 @@
+import { getKycRecord } from "./kycRecords.js";
+
 const sandboxRates = {
   USD: { NGN: 1650, KES: 129, GHS: 12.1, INR: 83.2, PHP: 57.5, MXN: 17.1, BRL: 5.1, PKR: 278, BDT: 117, ZAR: 18.2, EGP: 48.5, MAD: 10.0 },
   CAD: { NGN: 1210, KES: 94.5, GHS: 8.9, INR: 61.0, PHP: 42.1, MXN: 12.5, BRL: 3.75, PKR: 204, BDT: 86, ZAR: 13.3, EGP: 35.5, MAD: 7.3 },
@@ -17,10 +19,13 @@ const sandboxRates = {
 
 export const providerRegistry = {
   async verifyKyc({ user }) {
+    const storedKyc = await getKycRecord(user);
+
     return {
-      provider: process.env.KYC_PROVIDER || "sandbox-kyc",
-      status: user?.kycStatus === "approved" ? "approved" : "required",
-      reference: `kyc_${user?.id || "anonymous"}`
+      provider: storedKyc.record.provider,
+      status: storedKyc.record.status,
+      reference: storedKyc.record.providerInquiryId || `kyc_${user?.id || "anonymous"}`,
+      source: storedKyc.configured ? "database" : "sandbox-header"
     };
   },
 

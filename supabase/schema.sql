@@ -17,6 +17,19 @@ create table if not exists public.transfer_records (
 create index if not exists transfer_records_user_created_idx
   on public.transfer_records (user_id, created_at desc);
 
+create table if not exists public.kyc_records (
+  user_id text primary key,
+  provider text not null,
+  provider_inquiry_id text,
+  status text not null default 'required',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists kyc_records_status_idx
+  on public.kyc_records (status, updated_at desc);
+
 create table if not exists public.transfer_audit_logs (
   id uuid primary key default gen_random_uuid(),
   transfer_id text references public.transfer_records(id) on delete cascade,
@@ -28,6 +41,7 @@ create table if not exists public.transfer_audit_logs (
 );
 
 alter table public.transfer_records enable row level security;
+alter table public.kyc_records enable row level security;
 alter table public.transfer_audit_logs enable row level security;
 
 -- NexaRemit writes through serverless API routes with SUPABASE_SERVICE_ROLE_KEY.

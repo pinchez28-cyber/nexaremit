@@ -55,3 +55,21 @@ export async function createPersonaInquiry({ user }) {
     message: "Persona inquiry created. Keep this in sandbox until webhooks and database status updates are verified."
   };
 }
+
+export function parsePersonaEvent(payload = {}) {
+  const data = payload.data || {};
+  const attributes = data.attributes || {};
+  const eventName = attributes.name || data.type || payload.type || "unknown";
+  const inquiry = attributes.payload?.data || attributes.inquiry || data;
+  const inquiryAttributes = inquiry?.attributes || {};
+  const referenceId = inquiryAttributes["reference-id"] || inquiryAttributes.referenceId || attributes["reference-id"];
+  const status = inquiryAttributes.status || attributes.status || "pending";
+
+  return {
+    eventName,
+    inquiryId: inquiry?.id || data.id || "",
+    referenceId,
+    status,
+    raw: payload
+  };
+}

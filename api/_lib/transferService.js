@@ -14,7 +14,7 @@ export async function createTransferQuote({ user, amount, currency = "USD", reci
   ]);
 
   const fee = Number(amount || 0) > 0 ? Math.max(2.99, Number(amount) * 0.012) : 0;
-  const safety = runTransferSafetyChecks({ user, amount, currency, recipient, quote });
+  const safety = runTransferSafetyChecks({ user, amount, currency, recipient, quote, kyc });
 
   return {
     id: `quote_${Date.now()}`,
