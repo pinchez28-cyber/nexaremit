@@ -54,6 +54,11 @@ function CheckoutForm({ onAuthorized, onChangeCard }) {
   );
 }
 
+function getPaymentIntentError(payload) {
+  if (payload?.safety?.failures?.length) return payload.safety.failures.join(" ");
+  return payload?.message || payload?.error || "Unable to create payment intent.";
+}
+
 export default function StripePaymentPanel({ transferData, onAuthorized }) {
   const [clientSecret, setClientSecret] = useState("");
   const [status, setStatus] = useState("idle");
@@ -73,7 +78,7 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
           body: JSON.stringify(transferData)
         });
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message || payload.error || "Unable to create payment intent.");
+        if (!response.ok) throw new Error(getPaymentIntentError(payload));
         if (isMounted) {
           setClientSecret(payload.clientSecret);
           setStatus("ready");
