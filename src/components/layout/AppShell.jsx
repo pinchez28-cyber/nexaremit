@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { AlertTriangle, Bell, LockKeyhole, ShieldCheck } from "lucide-react";
 import Logo from "@/components/branding/Logo";
 import { createPageUrl } from "@/utils";
@@ -26,7 +26,9 @@ export default function AppShell({ children }) {
       </div>
       <header className="app-header">
         <div className="max-w-7xl mx-auto app-header-inner">
-          <Logo className="app-logo" />
+          <Link to="/" aria-label="Go to NexaRemit home">
+            <Logo className="app-logo" />
+          </Link>
           <nav className="app-nav" aria-label="Primary navigation">
             {navItems.map((item) => (
               <NavLink key={item.label} to={item.to} className={({ isActive }) => `app-nav-link ${isActive ? "is-active" : ""}`}>
