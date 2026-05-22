@@ -35,18 +35,25 @@ function fromKycRow(row) {
   };
 }
 
+function isSandboxMode() {
+  return (process.env.TRANSFER_MODE || "sandbox") === "sandbox";
+}
+
+function fallbackKycRecord(user, schemaReady = true) {
+  return {
+    configured: false,
+    schemaReady,
+    record: {
+      userId: user.id,
+      provider: process.env.KYC_PROVIDER || "sandbox-kyc",
+      status: isSandboxMode() ? "approved" : normalizeKycStatus(user.kycStatus)
+    }
+  };
+}
+
 export async function getKycRecord(user) {
   const supabase = getSupabaseAdminClient();
-  if (!supabase) {
-    return {
-      configured: false,
-      record: {
-        userId: user.id,
-        provider: process.env.KYC_PROVIDER || "sandbox-kyc",
-        status: normalizeKycStatus(user.kycStatus)
-      }
-    };
-  }
+  if (!supabase) return fallbackKycRecord(user);
 
   const { data, error } = await supabase
     .from("kyc_records")
@@ -54,17 +61,7 @@ export async function getKycRecord(user) {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (isMissingTableError(error)) {
-    return {
-      configured: false,
-      schemaReady: false,
-      record: {
-        userId: user.id,
-        provider: process.env.KYC_PROVIDER || "sandbox-kyc",
-        status: normalizeKycStatus(user.kycStatus)
-      }
-    };
-  }
+  if (isMissingTableError(error)) return fallbackKycRecord(user, false);
   if (error) throw error;
 
   return {
@@ -72,7 +69,7 @@ export async function getKycRecord(user) {
     record: data ? fromKycRow(data) : {
       userId: user.id,
       provider: process.env.KYC_PROVIDER || "persona",
-      status: "required"
+      status: isSandboxMode() ? "approved" : "required"
     }
   };
 }
