@@ -4,9 +4,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { isStripeConfigured, stripePromise } from "@/lib/stripe";
-import { AlertTriangle, CreditCard, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CreditCard, RefreshCw, ShieldCheck } from "lucide-react";
 
-function CheckoutForm({ onAuthorized }) {
+function CheckoutForm({ onAuthorized, onChangeCard }) {
   const stripe = useStripe();
   const elements = useElements();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,6 +33,13 @@ function CheckoutForm({ onAuthorized }) {
 
   return (
     <form className="stripe-checkout-form" onSubmit={handleSubmit}>
+      <div className="stripe-card-tools">
+        <button type="button" onClick={onChangeCard}>
+          <RefreshCw className="w-4 h-4" />
+          Change or add test card
+        </button>
+        <span>Use 4242 4242 4242 4242 for a successful Stripe test card.</span>
+      </div>
       <PaymentElement />
       {message && (
         <Alert className="border-red-200 bg-red-50">
@@ -51,6 +58,7 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
   const [clientSecret, setClientSecret] = useState("");
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
+  const [intentRefreshKey, setIntentRefreshKey] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -81,7 +89,12 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
     return () => {
       isMounted = false;
     };
-  }, [transferData]);
+  }, [transferData, intentRefreshKey]);
+
+  const handleChangeCard = () => {
+    setClientSecret("");
+    setIntentRefreshKey((key) => key + 1);
+  };
 
   if (!isStripeConfigured) {
     return (
@@ -119,8 +132,8 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
             <p>Use Stripe test card numbers only. Do not enter real card or bank details.</p>
           </div>
         </div>
-        <Elements stripe={stripePromise} options={{ clientSecret }}>
-          <CheckoutForm onAuthorized={onAuthorized} />
+        <Elements stripe={stripePromise} options={{ clientSecret }} key={clientSecret}>
+          <CheckoutForm onAuthorized={onAuthorized} onChangeCard={handleChangeCard} />
         </Elements>
       </CardContent>
     </Card>

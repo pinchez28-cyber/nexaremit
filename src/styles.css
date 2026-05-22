@@ -564,6 +564,35 @@ a:focus-visible {
   text-align: center;
 }
 
+.stripe-card-tools {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.875rem;
+  border: 1px solid #dbeafe;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+}
+
+.stripe-card-tools button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  border: 1px solid #0f766e;
+  border-radius: 0.65rem;
+  background: #ecfdf5;
+  color: #0f766e;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.stripe-card-tools span {
+  color: #475569;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 .history-list {
   display: grid;
   gap: 0.75rem;
