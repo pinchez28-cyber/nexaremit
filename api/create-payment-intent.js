@@ -13,7 +13,9 @@ export default async function handler(request, response) {
     if (!quote.safety.passed) {
       sendJson(response, 422, {
         error: "transfer_blocked",
-        safety: quote.safety
+        message: quote.safety.failures?.join(" ") || "Transfer blocked by safety checks.",
+        safety: quote.safety,
+        providers: quote.providers
       });
       return;
     }
