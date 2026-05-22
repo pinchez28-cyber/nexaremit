@@ -10,6 +10,7 @@ const navItems = [
   { label: "Send Money", to: createPageUrl("SendMoney") },
   { label: "Dashboard", to: createPageUrl("Dashboard") },
   { label: "History", to: createPageUrl("History") },
+  { label: "Reviews", to: createPageUrl("Reviews") },
   { label: "Recipients", to: createPageUrl("Recipients") },
   { label: "Partners", to: createPageUrl("Integrations") },
   { label: "Safety", to: createPageUrl("SecurityCompliance") }

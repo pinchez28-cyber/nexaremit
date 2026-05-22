@@ -11,6 +11,7 @@ This backend is sandbox-only. It does not move real money.
 - `POST /api/kyc-start` - create or prepare a Persona-compatible KYC inquiry
 - `POST /api/sanctions-screening` - create or reuse a sender/recipient sanctions screening result
 - `POST /api/risk-check` - create a rule-based fraud and velocity risk assessment
+- `GET /api/review-queue` - list KYC, sanctions, and risk items needing operations review
 - `GET /api/recipients` - sandbox recipient list
 - `POST /api/quotes` - create provider-ready transfer quote
 - `POST /api/transfers` - create sandbox transfer after safety checks
@@ -104,6 +105,10 @@ Current rules score:
 - daily transfer volume above standard limits
 
 Risk status can be `clear`, `manual_review`, or `blocked`. Blocked transfers cannot be created. Manual-review transfers produce warnings and should not be released to payout until an admin review system exists.
+
+## Operations Review Queue
+
+`GET /api/review-queue` reads open items from `kyc_records`, `sanctions_screenings`, and `risk_assessments`. The React page at `/Reviews` shows the queue for operators. This is the beginning of an admin workflow; before production it still needs authenticated staff-only access, reviewer notes, decision history, and four-eyes approval for high-risk releases.
 
 ## Security Rules
 

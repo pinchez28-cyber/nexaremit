@@ -645,6 +645,89 @@ a:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.review-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.review-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.review-summary-card span {
+  display: block;
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.review-summary-card strong {
+  color: var(--brand-ink);
+  font-size: 1.5rem;
+}
+
+.review-list {
+  display: grid;
+  gap: 0.875rem;
+}
+
+.review-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  background: #fff;
+}
+
+.review-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 0.75rem;
+  background: #fff7ed;
+  color: #f97316;
+}
+
+.review-row-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.review-row-title strong {
+  color: var(--brand-ink);
+}
+
+.review-row p {
+  margin: 0.45rem 0 0.35rem;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.review-row span {
+  color: #64748b;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.review-empty {
+  min-height: 9rem;
+  display: grid;
+  place-items: center;
+  gap: 0.75rem;
+  color: #0f766e;
+  font-weight: 800;
+}
+
 .timeline {
   display: grid;
   gap: 0.75rem;
@@ -1438,6 +1521,7 @@ a:focus-visible {
   .quote-layout,
   .quick-action-grid,
   .recipient-directory,
+  .review-summary-grid,
   .integration-grid,
   .provider-mode-grid,
   .home-hero-inner,
