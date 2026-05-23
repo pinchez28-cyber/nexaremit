@@ -10,7 +10,7 @@ export async function createTransferQuote({ user, amount, currency = "USD", reci
     providerRegistry.screenSanctions({ user, recipient }),
     providerRegistry.createFundingIntent({ amount, currency }),
     providerRegistry.createExchangeQuote({ amount, currency, receiveCurrency }),
-    providerRegistry.prepareSettlement({ amount, currency, receiveCurrency }),
+    providerRegistry.prepareSettlement({ amount, currency, receiveCurrency, recipient }),
     providerRegistry.createPayoutIntent({ recipient, receiveCurrency })
   ]);
 
