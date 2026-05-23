@@ -125,34 +125,34 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
               <span>Screening: {preparedTransfer.providers.sanctions.status}</span>
             </div>
             {settlement && (
-              <div className="settlement-readiness">
-                <div className="settlement-readiness-head">
+              <section className="grid gap-3 p-4 rounded-xl border border-blue-200 bg-blue-50">
+                <span className="flex items-start gap-3">
                   <Landmark className="w-5 h-5 text-blue-700" />
-                  <span>
-                    <strong>Settlement rail: {formatNetwork(settlement.network)}</strong>
-                    <small>{settlement.rail}</small>
+                  <span className="grid gap-2">
+                    <strong className="text-primary">Settlement rail: {formatNetwork(settlement.network)}</strong>
+                    <small className="text-neutral-600">{settlement.rail}</small>
                   </span>
-                </div>
-                <div className="settlement-readiness-grid">
-                  <span>
-                    <small>Status</small>
-                    <strong>{formatStatus(settlement.status)}</strong>
+                </span>
+                <section className="grid sm:grid-cols-2 gap-3">
+                  <span className="grid gap-2 p-4 rounded-lg bg-white border border-neutral-200">
+                    <small className="text-neutral-500 font-semibold">Status</small>
+                    <strong className="text-primary">{formatStatus(settlement.status)}</strong>
                   </span>
-                  <span>
-                    <small>Asset</small>
-                    <strong>{settlement.asset || `${transferData.currency} settlement draft`}</strong>
+                  <span className="grid gap-2 p-4 rounded-lg bg-white border border-neutral-200">
+                    <small className="text-neutral-500 font-semibold">Asset</small>
+                    <strong className="text-primary">{settlement.asset || `${transferData.currency} settlement draft`}</strong>
                   </span>
-                  <span>
-                    <small>Ledger action</small>
-                    <strong>{settlement.ledgerAction || "No blockchain transaction sent yet"}</strong>
+                  <span className="grid gap-2 p-4 rounded-lg bg-white border border-neutral-200">
+                    <small className="text-neutral-500 font-semibold">Ledger action</small>
+                    <strong className="text-primary">{settlement.ledgerAction || "No blockchain transaction sent yet"}</strong>
                   </span>
-                  <span>
-                    <small>Mode</small>
-                    <strong>Sandbox only</strong>
+                  <span className="grid gap-2 p-4 rounded-lg bg-white border border-neutral-200">
+                    <small className="text-neutral-500 font-semibold">Mode</small>
+                    <strong className="text-primary">Sandbox only</strong>
                   </span>
-                </div>
-                {settlement.note && <p>{settlement.note}</p>}
-              </div>
+                </section>
+                {settlement.note && <p className="text-sm text-neutral-600">{settlement.note}</p>}
+              </section>
             )}
           </div>
         )}
