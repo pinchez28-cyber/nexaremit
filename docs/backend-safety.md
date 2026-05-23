@@ -11,7 +11,6 @@ This backend is sandbox-only. It does not move real money.
 - `POST /api/kyc-start` - create or prepare a Persona-compatible KYC inquiry
 - `POST /api/sanctions-screening` - create or reuse a sender/recipient sanctions screening result
 - `POST /api/risk-check` - create a rule-based fraud and velocity risk assessment
-- `GET /api/review-queue` - list KYC, sanctions, and risk items needing operations review
 - `GET /api/recipients` - sandbox recipient list
 - `POST /api/quotes` - create provider-ready transfer quote
 - `POST /api/transfers` - create sandbox transfer after safety checks
@@ -85,7 +84,7 @@ Provider categories:
 
 Current behavior:
 
-- Sandbox recipients with `risk: \"Review required\"` create a `manual_review` screening.
+- Sandbox recipients with `risk: "Review required"` create a `manual_review` screening.
 - Other sandbox recipients create a `clear` screening.
 - Transfer creation is blocked unless the screening status is `clear`.
 - A production AML provider should replace the sandbox result with real watchlist, sanctions, PEP, adverse media, and corridor-risk checks.
@@ -104,11 +103,7 @@ Current rules score:
 - repeated transfers in the last 24 hours
 - daily transfer volume above standard limits
 
-Risk status can be `clear`, `manual_review`, or `blocked`. Blocked transfers cannot be created. Manual-review transfers produce warnings and should not be released to payout until an admin review system exists.
-
-## Operations Review Queue
-
-`GET /api/review-queue` reads open items from `kyc_records`, `sanctions_screenings`, and `risk_assessments`. The React page at `/Reviews` shows the queue for operators. This is the beginning of an admin workflow; before production it still needs authenticated staff-only access, reviewer notes, decision history, and four-eyes approval for high-risk releases.
+Risk status can be `clear`, `manual_review`, or `blocked`. Blocked transfers cannot be created. Manual-review transfers produce warnings and should not be released to payout until an authenticated admin review workflow exists.
 
 ## Security Rules
 
@@ -130,4 +125,4 @@ Use `supabase/schema.sql` in the Supabase SQL editor to create the transfer reco
 
 The React app never receives the service role key. Browser screens call `/api/transfer-records`, and that serverless route writes records with the server-only Supabase client. If Supabase is not configured yet, NexaRemit keeps using local sandbox records so the demo remains usable.
 
-The same schema also creates `kyc_records`. When Supabase is configured, transfer creation reads KYC status from this table. If a sender has no approved KYC record, transfer creation is blocked.
+The same schema also creates `kyc_records`. In sandbox mode, missing KYC rows are treated as approved for test payments only. In production mode, transfer creation must read approved KYC status from the database.
