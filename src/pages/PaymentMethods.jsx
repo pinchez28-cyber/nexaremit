@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createPageUrl } from "@/utils";
 import { AlertTriangle, CalendarClock, CheckCircle, CreditCard, Plus, ShieldCheck, Star, Trash2 } from "lucide-react";
 
-const fallbackMethods = [
+const sandboxMethods = [
   {
     id: "sandbox_pm_visa_4242",
     brand: "Visa",
@@ -15,8 +15,7 @@ const fallbackMethods = [
     expMonth: 12,
     expYear: 2028,
     funding: "debit",
-    isDefault: true,
-    source: "sandbox"
+    isDefault: true
   },
   {
     id: "sandbox_pm_mastercard_4444",
@@ -25,8 +24,7 @@ const fallbackMethods = [
     expMonth: 9,
     expYear: 2027,
     funding: "debit",
-    isDefault: false,
-    source: "sandbox"
+    isDefault: false
   },
   {
     id: "sandbox_pm_old_0341",
@@ -35,8 +33,7 @@ const fallbackMethods = [
     expMonth: 1,
     expYear: 2024,
     funding: "debit",
-    isDefault: false,
-    source: "sandbox"
+    isDefault: false
   }
 ];
 
@@ -57,69 +54,22 @@ function normalizeDefault(methods) {
 }
 
 export default function PaymentMethods() {
-  const [methods, setMethods] = useState(fallbackMethods);
-  const [status, setStatus] = useState("loading");
-  const [message, setMessage] = useState("");
-  const [removingId, setRemovingId] = useState("");
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadMethods() {
-      setStatus("loading");
-      try {
-        const response = await fetch("/api/payment-methods");
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message || "Could not load payment methods.");
-        if (isMounted) {
-          setMethods(normalizeDefault(payload.methods?.length ? payload.methods : fallbackMethods));
-          setMessage(payload.message || "");
-          setStatus("ready");
-        }
-      } catch (error) {
-        if (isMounted) {
-          setMethods(fallbackMethods);
-          setMessage(error.message || "Using sandbox payment methods for now.");
-          setStatus("ready");
-        }
-      }
-    }
-
-    loadMethods();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
+  const [methods, setMethods] = useState(sandboxMethods);
+  const [message, setMessage] = useState("Sandbox card management is active. Real Stripe card deletion will be connected after user-to-Stripe-Customer storage is added.");
   const expiredCount = useMemo(() => methods.filter(isExpired).length, [methods]);
   const activeCount = methods.length - expiredCount;
 
   const makeDefault = (id) => {
     setMethods((current) => current.map((method) => ({ ...method, isDefault: method.id === id })));
-    setMessage("Default payment method updated for this session.");
+    setMessage("Default payment method updated for this sandbox session.");
   };
 
-  const removeMethod = async (method) => {
+  const removeMethod = (method) => {
     const shouldRemove = window.confirm(`Remove ${method.brand} ending in ${method.last4}?`);
     if (!shouldRemove) return;
 
-    setRemovingId(method.id);
-    try {
-      const response = await fetch("/api/payment-methods", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentMethodId: method.id })
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message || "Could not remove this card.");
-
-      setMethods((current) => normalizeDefault(current.filter((item) => item.id !== method.id)));
-      setMessage(payload.message || `${method.brand} ending in ${method.last4} was removed.`);
-    } catch (error) {
-      setMessage(error.message || "Could not remove this card.");
-    } finally {
-      setRemovingId("");
-    }
+    setMethods((current) => normalizeDefault(current.filter((item) => item.id !== method.id)));
+    setMessage(`${method.brand} ending in ${method.last4} was removed from this sandbox page.`);
   };
 
   return (
@@ -187,13 +137,11 @@ export default function PaymentMethods() {
             <CardTitle>Cards On File</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {status === "loading" && <div className="payment-loading">Loading payment methods...</div>}
-
-            {status === "ready" && methods.length === 0 && (
+            {methods.length === 0 && (
               <div className="payment-choice-empty">No saved cards yet. Add one during your next test payment.</div>
             )}
 
-            {status === "ready" && methods.map((method) => {
+            {methods.map((method) => {
               const expired = isExpired(method);
               return (
                 <div key={method.id} className="history-row">
@@ -213,9 +161,9 @@ export default function PaymentMethods() {
                     <Button variant="outline" disabled={expired || method.isDefault} onClick={() => makeDefault(method.id)}>
                       Make Default
                     </Button>
-                    <Button variant="outline" disabled={removingId === method.id} onClick={() => removeMethod(method)}>
+                    <Button variant="outline" onClick={() => removeMethod(method)}>
                       <Trash2 className="w-4 h-4 mr-2" />
-                      {removingId === method.id ? "Removing" : "Remove"}
+                      Remove
                     </Button>
                   </div>
                 </div>
