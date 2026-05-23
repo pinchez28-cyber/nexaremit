@@ -50,10 +50,11 @@ export const mockExchangeProvider = {
 export const mockSettlementProvider = {
   async prepareSettlement({ currency, recipient }) {
     return {
-      rail: "XRPL-compatible settlement adapter",
-      asset: currency === "USD" ? "USD stablecoin or XRP bridge" : `${currency} treasury balance`,
-      status: "sandbox_ready",
-      note: `Prepared mock settlement for ${recipient?.country || "receiver country"}.`
+      rail: "XRPL Testnet settlement adapter",
+      asset: currency === "XRP" ? "Native XRP bridge asset" : "USD issued-currency bridge",
+      status: "configuration_required",
+      network: "testnet",
+      note: `Prepared XRPL sandbox settlement plan for ${recipient?.country || "receiver country"}. Add treasury and issuer addresses before any ledger transaction.`
     };
   }
 };
