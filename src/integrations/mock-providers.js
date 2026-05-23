@@ -54,6 +54,7 @@ export const mockSettlementProvider = {
       asset: currency === "XRP" ? "Native XRP bridge asset" : "USD issued-currency bridge",
       status: "configuration_required",
       network: "testnet",
+      ledgerAction: "No blockchain transaction sent yet",
       note: `Prepared XRPL sandbox settlement plan for ${recipient?.country || "receiver country"}. Add treasury and issuer addresses before any ledger transaction.`
     };
   }
