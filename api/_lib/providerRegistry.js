@@ -1,5 +1,7 @@
 import { getKycRecord } from "./kycRecords.js";
+import { sanctionsScreening } from "./sanctionsRecords.js";
 import { screenSanctionsSubject } from "./sanctionsRecords.js";
+import { prepareXrplSettlement } from "./xrplSettlement.js";
 
 const sandboxRates = {
   USD: { NGN: 1650, KES: 129, GHS: 12.1, INR: 83.2, PHP: 57.5, MXN: 17.1, BRL: 5.1, PKR: 278, BDT: 117, ZAR: 18.2, EGP: 48.5, MAD: 10.0 },
@@ -62,11 +64,16 @@ export const providerRegistry = {
     };
   },
 
-  async prepareSettlement({ currency, receiveCurrency }) {
+  async prepareSettlement({ amount, currency, receiveCurrency, recipient }) {
+    const settlementProvider = process.env.SETTLEMENT_PROVIDER || "xrpl-sandbox";
+    if (settlementProvider.toLowerCase().includes("xrpl")) {
+      return prepareXrplSettlement({ amount, currency, receiveCurrency, recipient });
+    }
+
     return {
-      provider: process.env.SETTLEMENT_PROVIDER || "sandbox-xrpl-compatible",
-      rail: "XRPL-compatible adapter",
-      asset: currency === "USD" ? "USD stablecoin or XRP bridge" : `${currency}/${receiveCurrency} treasury bridge`,
+      provider: settlementProvider,
+      rail: "Partner treasury settlement",
+      asset: currency === "USD" ? "USD treasury balance" : `${currency}/${receiveCurrency} treasury bridge`,
       status: "prepared"
     };
   },
