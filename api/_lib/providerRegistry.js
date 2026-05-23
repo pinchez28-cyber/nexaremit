@@ -1,5 +1,4 @@
 import { getKycRecord } from "./kycRecords.js";
-import { sanctionsScreening } from "./sanctionsRecords.js";
 import { screenSanctionsSubject } from "./sanctionsRecords.js";
 import { prepareXrplSettlement } from "./xrplSettlement.js";
 
