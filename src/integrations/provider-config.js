@@ -4,7 +4,9 @@ export const providerConfig = {
   sanctionsProvider: import.meta.env.VITE_SANCTIONS_PROVIDER || "mock-screening",
   fundingProvider: import.meta.env.VITE_FUNDING_PROVIDER || "mock-card-bank",
   exchangeProvider: import.meta.env.VITE_EXCHANGE_PROVIDER || "mock-fx",
-  settlementProvider: import.meta.env.VITE_SETTLEMENT_PROVIDER || "mock-xrpl",
+  settlementProvider: import.meta.env.VITE_SETTLEMENT_PROVIDER || "xrpl-sandbox",
+  xrplNetwork: import.meta.env.VITE_XRPL_NETWORK || "testnet",
+  xrplAsset: import.meta.env.VITE_XRPL_ASSET || "USD issued currency",
   payoutProvider: import.meta.env.VITE_PAYOUT_PROVIDER || "mock-payout"
 };
 
@@ -13,6 +15,6 @@ export const integrationChecklist = [
   { key: "sanctions", label: "Sanctions and watchlist screening", provider: providerConfig.sanctionsProvider, required: "Screen sender, receiver, countries, and wallet addresses." },
   { key: "funding", label: "Sender funding", provider: providerConfig.fundingProvider, required: "Charge card, debit bank account, or collect local payment." },
   { key: "exchange", label: "FX and exchange quote", provider: providerConfig.exchangeProvider, required: "Lock rates, fees, spread, and quote expiration." },
-  { key: "settlement", label: "Settlement rail", provider: providerConfig.settlementProvider, required: "Move value using bank rails, stablecoin rails, XRPL, or partner treasury." },
+  { key: "settlement", label: "XRPL settlement rail", provider: `${providerConfig.settlementProvider} (${providerConfig.xrplNetwork})`, required: "Prepare XRPL Testnet/Devnet settlement drafts before any mainnet value movement." },
   { key: "payout", label: "Receiver payout", provider: providerConfig.payoutProvider, required: "Deliver to bank account, mobile money, wallet, or cash pickup." }
 ];
