@@ -8,6 +8,23 @@ import { getPaymentIntentLabel, getPaymentMethodLabel } from "@/lib/payment-labe
 import { transferOrchestrator } from "@/integrations/transfer-orchestrator";
 import { AlertTriangle, CheckCircle, Landmark, ShieldCheck } from "lucide-react";
 
+const statusLabels = {
+  configuration_required: "Prepared, not submitted",
+  sandbox_ready: "Sandbox ready",
+  ready: "Ready",
+  submitted: "Submitted"
+};
+
+function formatStatus(status) {
+  if (!status) return "Prepared, not submitted";
+  return statusLabels[status] || status.replace(/_/g, " ");
+}
+
+function formatNetwork(network) {
+  if (!network) return "XRPL Testnet";
+  return `XRPL ${network.charAt(0).toUpperCase()}${network.slice(1)}`;
+}
+
 export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
   const fallbackQuote = calculateSandboxQuote(transferData);
   const [preparedTransfer, setPreparedTransfer] = useState(null);
@@ -16,6 +33,7 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
   const hasPaymentMethod = Boolean(transferData.paymentMethod?.type || transferData.paymentMethod);
   const paymentLabel = getPaymentMethodLabel(transferData.paymentMethod);
   const paymentIntentId = getPaymentIntentLabel(transferData.paymentMethod);
+  const settlement = preparedTransfer?.providers?.settlement;
 
   useEffect(() => {
     let isMounted = true;
@@ -106,10 +124,36 @@ export default function ReviewTransfer({ transferData, onConfirm, onBack }) {
               <ShieldCheck className="w-5 h-5 text-green-600" />
               <span>Screening: {preparedTransfer.providers.sanctions.status}</span>
             </div>
-            <div>
-              <Landmark className="w-5 h-5 text-blue-700" />
-              <span>Settlement: {preparedTransfer.providers.settlement.rail}</span>
-            </div>
+            {settlement && (
+              <div className="settlement-readiness">
+                <div className="settlement-readiness-head">
+                  <Landmark className="w-5 h-5 text-blue-700" />
+                  <span>
+                    <strong>Settlement rail: {formatNetwork(settlement.network)}</strong>
+                    <small>{settlement.rail}</small>
+                  </span>
+                </div>
+                <div className="settlement-readiness-grid">
+                  <span>
+                    <small>Status</small>
+                    <strong>{formatStatus(settlement.status)}</strong>
+                  </span>
+                  <span>
+                    <small>Asset</small>
+                    <strong>{settlement.asset || `${transferData.currency} settlement draft`}</strong>
+                  </span>
+                  <span>
+                    <small>Ledger action</small>
+                    <strong>{settlement.ledgerAction || "No blockchain transaction sent yet"}</strong>
+                  </span>
+                  <span>
+                    <small>Mode</small>
+                    <strong>Sandbox only</strong>
+                  </span>
+                </div>
+                {settlement.note && <p>{settlement.note}</p>}
+              </div>
+            )}
           </div>
         )}
       </CardContent>
