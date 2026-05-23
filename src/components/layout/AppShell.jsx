@@ -8,6 +8,7 @@ const navItems = [
   { label: "Home", to: "/" },
   { label: "Start Here", to: createPageUrl("Setup") },
   { label: "Send Money", to: createPageUrl("SendMoney") },
+  { label: "Cards", to: createPageUrl("PaymentMethods") },
   { label: "Dashboard", to: createPageUrl("Dashboard") },
   { label: "History", to: createPageUrl("History") },
   { label: "Recipients", to: createPageUrl("Recipients") },
