@@ -35,6 +35,14 @@ export function createScreeningId(subject) {
   return `screen_${hash}`;
 }
 
+function isSandboxMode() {
+  return (process.env.TRANSFER_MODE || "sandbox") === "sandbox";
+}
+
+function isReviewRecipient(recipient) {
+  return recipient?.risk === "Review required";
+}
+
 function toScreeningRow(record) {
   return {
     id: record.id,
@@ -103,10 +111,12 @@ export async function screenSanctionsSubject({ user, recipient }) {
   const subject = createScreeningSubject({ user, recipient });
   const id = createScreeningId(subject);
   const stored = await getSanctionsRecord(id);
+  const requiresReview = isReviewRecipient(recipient);
+  const sandboxClearOverride = isSandboxMode() && !requiresReview;
 
-  if (stored.record) return stored;
+  if (stored.record && !sandboxClearOverride) return stored;
+  if (stored.record && sandboxClearOverride && stored.record.status === "clear") return stored;
 
-  const requiresReview = recipient?.risk === "Review required";
   const status = requiresReview ? "manual_review" : "clear";
 
   return upsertSanctionsRecord({
@@ -117,7 +127,9 @@ export async function screenSanctionsSubject({ user, recipient }) {
     subject,
     metadata: {
       mode: process.env.TRANSFER_MODE || "sandbox",
-      reason: requiresReview ? "Recipient marked for review in sandbox data." : "Sandbox screening returned no match."
+      reason: requiresReview
+        ? "Recipient marked for review in sandbox data."
+        : "Sandbox verified recipient returned no sanctions match."
     }
   });
 }
