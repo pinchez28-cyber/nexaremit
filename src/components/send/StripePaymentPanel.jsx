@@ -6,11 +6,34 @@ import { Card, CardContent } from "@/components/ui/card";
 import { isStripeConfigured, stripePromise } from "@/lib/stripe";
 import { AlertTriangle, CreditCard, RefreshCw, ShieldCheck } from "lucide-react";
 
-function CheckoutForm({ onAuthorized, onChangeCard }) {
+const sandboxCards = [
+  {
+    id: "visa",
+    brand: "Visa",
+    number: "4242 4242 4242 4242",
+    note: "Standard successful test card"
+  },
+  {
+    id: "mastercard",
+    brand: "Mastercard",
+    number: "5555 5555 5555 4444",
+    note: "Alternate successful test card"
+  }
+];
+
+function CheckoutForm({
+  onAuthorized,
+  onChangeCard,
+  showTestCards,
+  onAuthorizeTestCard,
+  manualStatus,
+  manualMessage
+}) {
   const stripe = useStripe();
   const elements = useElements();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const isManualLoading = manualStatus === "loading";
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -34,12 +57,41 @@ function CheckoutForm({ onAuthorized, onChangeCard }) {
   return (
     <form className="stripe-checkout-form" onSubmit={handleSubmit}>
       <div className="stripe-card-tools">
-        <button type="button" onClick={onChangeCard}>
+        <button type="button" onClick={onChangeCard} aria-expanded={showTestCards}>
           <RefreshCw className="w-4 h-4" />
-          Change or add test card
+          {showTestCards ? "Hide test card choices" : "Change or add test card"}
         </button>
-        <span>Use 4242 4242 4242 4242 for a successful Stripe test card.</span>
+        <span>Pick a sandbox card below, or use Stripe Link's saved test card.</span>
       </div>
+
+      {showTestCards && (
+        <div className="grid gap-3 md:grid-cols-2">
+          {sandboxCards.map((card) => (
+            <button
+              key={card.id}
+              type="button"
+              onClick={() => onAuthorizeTestCard(card.id)}
+              disabled={isManualLoading}
+              className="rounded-xl border border-neutral-200 bg-white p-4 text-left transition hover:border-teal-500 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="mb-2 flex items-center gap-2 font-semibold text-primary">
+                <CreditCard className="h-4 w-4 text-teal-700" />
+                Use {card.brand} test card
+              </span>
+              <span className="block text-sm font-medium text-neutral-700">{card.number}</span>
+              <span className="block text-xs text-neutral-500">{card.note}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {manualMessage && (
+        <Alert className="border-red-200 bg-red-50">
+          <AlertTriangle className="w-5 h-5 text-red-600" />
+          <AlertDescription className="text-red-800">{manualMessage}</AlertDescription>
+        </Alert>
+      )}
+
       <PaymentElement />
       {message && (
         <Alert className="border-red-200 bg-red-50">
@@ -47,7 +99,7 @@ function CheckoutForm({ onAuthorized, onChangeCard }) {
           <AlertDescription className="text-red-800">{message}</AlertDescription>
         </Alert>
       )}
-      <Button className="w-full" disabled={!stripe || isSubmitting}>
+      <Button className="w-full" disabled={!stripe || isSubmitting || isManualLoading}>
         {isSubmitting ? "Authorizing..." : "Authorize Test Payment"}
       </Button>
     </form>
@@ -64,6 +116,9 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
   const [intentRefreshKey, setIntentRefreshKey] = useState(0);
+  const [showTestCards, setShowTestCards] = useState(false);
+  const [manualStatus, setManualStatus] = useState("idle");
+  const [manualMessage, setManualMessage] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -97,8 +152,27 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
   }, [transferData, intentRefreshKey]);
 
   const handleChangeCard = () => {
-    setClientSecret("");
-    setIntentRefreshKey((key) => key + 1);
+    setManualMessage("");
+    setShowTestCards((isVisible) => !isVisible);
+  };
+
+  const authorizeTestCard = async (testCard) => {
+    setManualStatus("loading");
+    setManualMessage("");
+    try {
+      const response = await fetch("/api/authorize-test-card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...transferData, testCard })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(getPaymentIntentError(payload));
+      onAuthorized(payload.paymentIntentId || `stripe_${testCard}_authorized`);
+    } catch (nextError) {
+      setManualMessage(nextError.message || "Could not authorize the selected test card.");
+    } finally {
+      setManualStatus("idle");
+    }
   };
 
   if (!isStripeConfigured) {
@@ -137,8 +211,15 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
             <p>Use Stripe test card numbers only. Do not enter real card or bank details.</p>
           </div>
         </div>
-        <Elements stripe={stripePromise} options={{ clientSecret }} key={clientSecret}>
-          <CheckoutForm onAuthorized={onAuthorized} onChangeCard={handleChangeCard} />
+        <Elements stripe={stripePromise} options={{ clientSecret }} key={`${clientSecret}-${intentRefreshKey}`}>
+          <CheckoutForm
+            onAuthorized={onAuthorized}
+            onChangeCard={handleChangeCard}
+            showTestCards={showTestCards}
+            onAuthorizeTestCard={authorizeTestCard}
+            manualStatus={manualStatus}
+            manualMessage={manualMessage}
+          />
         </Elements>
       </CardContent>
     </Card>
