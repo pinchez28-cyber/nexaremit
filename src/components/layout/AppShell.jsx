@@ -22,7 +22,7 @@ export default function AppShell({ children }) {
       <div className="prototype-banner">
         <div className="max-w-7xl mx-auto app-banner-inner">
           <span className="banner-icon"><AlertTriangle className="w-4 h-4" /></span>
-          Prototype mode: payment rails, KYC, sanctions screening, and regulatory reporting must be implemented before real transactions.
+          Testnet mode: quotes, card authorization, and transfer records are active here, while signed XRPL submission and live payout release are still being completed.
         </div>
       </div>
       <header className="app-header">
@@ -40,7 +40,7 @@ export default function AppShell({ children }) {
           <div className="header-actions">
             <div className="header-trust">
               <ShieldCheck className="w-4 h-4" />
-              <span>Sandbox</span>
+              <span>Testnet</span>
             </div>
             <button type="button" className="icon-button" aria-label="Notifications">
               <Bell className="w-5 h-5" />
@@ -55,7 +55,7 @@ export default function AppShell({ children }) {
             <LockKeyhole className="w-5 h-5" />
             <span>Designed for regulated money movement. Connect licensed partners before launch.</span>
           </div>
-          <span>NexaRemit prototype</span>
+          <span>NexaRemit testnet workspace</span>
         </div>
       </footer>
     </div>

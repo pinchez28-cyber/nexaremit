@@ -1,29 +1,25 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { calculateSandboxQuote } from "@/lib/transfer-pricing";
 import { sendCurrencies } from "@/lib/currency-options";
-import { transferOrchestrator } from "@/integrations/transfer-orchestrator";
 import { AlertTriangle, Clock, PlugZap, ReceiptText } from "lucide-react";
 
-export default function AmountInput({ recipient, amount, currency, purpose, onAmountChange, onNext, onBack }) {
+export default function AmountInput({ recipient, amount, currency, purpose, quote, quoteStatus, quoteError, onAmountChange, onRequestQuote, onBack }) {
   const fallbackQuote = calculateSandboxQuote({ amount, currency, recipient });
-  const [providerQuote, setProviderQuote] = useState(null);
-  const quote = providerQuote || fallbackQuote;
+  const mergedQuote = {
+    ...fallbackQuote,
+    ...(quote || {}),
+    receiveCurrency: quote?.receiveCurrency || fallbackQuote.receiveCurrency,
+    deliveryEstimate: quote?.providers?.payout?.deliveryEstimate || fallbackQuote.deliveryEstimate,
+    transferLimit: recipient?.limit || fallbackQuote.transferLimit,
+    isOverLimit: fallbackQuote.isOverLimit
+  };
+
   const updateAmount = (nextAmount) => onAmountChange({ amount: nextAmount, currency, purpose });
   const updateCurrency = (nextCurrency) => onAmountChange({ amount, currency: nextCurrency, purpose });
   const updatePurpose = (nextPurpose) => onAmountChange({ amount, currency, purpose: nextPurpose });
-
-  useEffect(() => {
-    let isMounted = true;
-    transferOrchestrator.createQuote({ amount, currency, recipient, purpose }).then((nextQuote) => {
-      if (isMounted) setProviderQuote(nextQuote);
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, [amount, currency, recipient, purpose]);
 
   return (
     <Card className="shadow-premium border-0">
@@ -53,45 +49,59 @@ export default function AmountInput({ recipient, amount, currency, purpose, onAm
               <option value="business">Business</option>
             </select>
           </label>
-          {quote.isOverLimit && (
+          {quoteStatus === "error" && (
+            <Alert className="sm:col-span-3 border-red-200 bg-red-50">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+              <AlertDescription className="text-red-800">{quoteError?.message || "Unable to create a quote right now."}</AlertDescription>
+            </Alert>
+          )}
+          {mergedQuote.isOverLimit && (
             <Alert className="sm:col-span-3 border-red-200 bg-red-50">
               <AlertTriangle className="w-5 h-5 text-red-600" />
               <AlertDescription className="text-red-800">
-                This recipient's current limit is {currency} {quote.transferLimit.toLocaleString()} per transfer.
+                This recipient's current limit is {currency} {mergedQuote.transferLimit.toLocaleString()} per transfer.
               </AlertDescription>
+            </Alert>
+          )}
+          {quote?.safety?.warnings?.length > 0 && (
+            <Alert className="sm:col-span-3 border-yellow-200 bg-yellow-50">
+              <AlertTriangle className="w-5 h-5 text-yellow-600" />
+              <AlertDescription className="text-yellow-800">{quote.safety.warnings.join(" ")}</AlertDescription>
             </Alert>
           )}
         </div>
         <aside className="quote-summary">
           <div className="quote-summary-head">
             <ReceiptText className="w-5 h-5" />
-            <span>Provider-ready quote</span>
+            <span>{quote?.id ? "Server quote ready" : "Quote preview"}</span>
           </div>
           <div className="quote-row">
             <span>Rate</span>
-            <strong>1 {currency} = {quote.rate.toFixed(2)} {quote.receiveCurrency}</strong>
+            <strong>1 {currency} = {Number(mergedQuote.rate || 0).toFixed(2)} {mergedQuote.receiveCurrency}</strong>
           </div>
           <div className="quote-row">
             <span>Fee</span>
-            <strong>{currency} {quote.fee.toFixed(2)}</strong>
+            <strong>{currency} {Number(mergedQuote.fee || 0).toFixed(2)}</strong>
           </div>
           <div className="quote-row">
             <span>Recipient gets</span>
-            <strong>{quote.receiveCurrency} {quote.receivedAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+            <strong>{mergedQuote.receiveCurrency} {Number(mergedQuote.receivedAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
           </div>
           <div className="delivery-chip">
             <Clock className="w-4 h-4" />
-            {quote.deliveryEstimate}
+            {quoteStatus === "loading" ? "Fetching fresh quote..." : mergedQuote.deliveryEstimate}
           </div>
           <div className="integration-chip">
             <PlugZap className="w-4 h-4" />
-            Sandbox adapters active
+            {quote?.id ? `Quote ID ${quote.id}` : "Create a quote before continuing"}
           </div>
         </aside>
       </CardContent>
       <CardFooter className="justify-between">
         <Button variant="outline" onClick={onBack}>Back</Button>
-        <Button onClick={onNext} disabled={!amount || quote.isOverLimit}>Continue</Button>
+        <Button onClick={onRequestQuote} disabled={!amount || mergedQuote.isOverLimit || quoteStatus === "loading"}>
+          {quoteStatus === "loading" ? "Creating Quote..." : "Continue"}
+        </Button>
       </CardFooter>
     </Card>
   );
