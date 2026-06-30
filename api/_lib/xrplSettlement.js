@@ -1,5 +1,4 @@
 import { Buffer } from "node:buffer";
-import { Client, Wallet } from "xrpl";
 
 const XRPL_NETWORKS = {
   testnet: {
@@ -253,6 +252,20 @@ export async function submitXrplSettlement({
       status: "settlement_failed",
       signingMode: "server_seed",
       error: "XRPL_TREASURY_SEED is missing."
+    };
+  }
+
+  let Client;
+  let Wallet;
+
+  try {
+    ({ Client, Wallet } = await import("xrpl"));
+  } catch (error) {
+    return {
+      ...prepared,
+      status: "settlement_failed",
+      signingMode: "server_seed",
+      error: `Failed to load xrpl runtime dependency: ${error.message}`
     };
   }
 

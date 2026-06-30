@@ -3,7 +3,6 @@ import { providerRegistry } from "./providerRegistry.js";
 import { assessTransferRisk } from "./riskRecords.js";
 import { runTransferSafetyChecks } from "./safetyEngine.js";
 import { getStripe, toStripeAmount } from "./stripeClient.js";
-import { submitXrplSettlement } from "./xrplSettlement.js";
 
 function nowIso() {
   return new Date().toISOString();
@@ -278,6 +277,8 @@ export async function createTransfer({
       })
     };
   }
+
+  const { submitXrplSettlement } = await import("./xrplSettlement.js");
 
   const settlement = await submitXrplSettlement({
     amount: quote.amount,
