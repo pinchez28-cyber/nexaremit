@@ -26,6 +26,7 @@
     "node": ">=22"
   },
   "overrides": {
-    "@noble/hashes": "1.8.0"
+    "@noble/hashes": "1.8.0",
+    "\\@noble/hashes\\": "1.8.0"
   }
 }
