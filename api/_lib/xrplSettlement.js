@@ -1,4 +1,5 @@
-import xrpl from "xrpl";
+import { Buffer } from "node:buffer";
+import { Client, Wallet } from "xrpl";
 
 const XRPL_NETWORKS = {
   testnet: {
@@ -23,8 +24,7 @@ const XRPL_NETWORKS = {
 
 function getNetworkKey() {
   const requested = String(process.env.XRPL_NETWORK || "testnet").toLowerCase();
-  if (XRPL_NETWORKS[requested]) return requested;
-  return "testnet";
+  return XRPL_NETWORKS[requested] ? requested : "testnet";
 }
 
 function getXrplConfig() {
@@ -114,24 +114,24 @@ function createExplorerTransactionUrl(config, hash) {
   return `${config.explorerUrl}/transactions/${hash}`;
 }
 
-function createPaymentDraft({ amount, currency, receiveCurrency, recipient, config, asset, reference }) {
+function createPaymentDraft({ amount, recipient, config, asset, reference }) {
   const destination = recipient?.xrplAddress || config.destinationAddress;
   const useConfiguredDestination = !recipient?.xrplAddress && Boolean(config.destinationAddress);
 
   if (!config.treasuryAddress || !destination) return null;
 
-  const baseDraft = {
+  const tx = {
     TransactionType: "Payment",
     Account: config.treasuryAddress,
     Destination: destination
   };
 
   if (useConfiguredDestination && config.destinationTag) {
-    baseDraft.DestinationTag = Number(config.destinationTag);
+    tx.DestinationTag = Number(config.destinationTag);
   }
 
   if (reference) {
-    baseDraft.Memos = [
+    tx.Memos = [
       {
         Memo: {
           MemoData: encodeMemoData(`NexaRemit testnet transfer ${reference}`)
@@ -141,22 +141,17 @@ function createPaymentDraft({ amount, currency, receiveCurrency, recipient, conf
   }
 
   if (asset.type === "native") {
-    return {
-      ...baseDraft,
-      Amount: String(Math.round(Number(amount || 0) * 1_000_000))
-    };
+    tx.Amount = String(Math.round(Number(amount || 0) * 1_000_000));
+    return tx;
   }
 
-  return {
-    ...baseDraft,
-    Amount: {
-      currency: asset.code,
-      issuer: asset.issuer,
-      value: String(Number(amount || 0))
-    },
-    SendCurrency: currency,
-    ReceiveCurrency: receiveCurrency
+  tx.Amount = {
+    currency: asset.code,
+    issuer: asset.issuer,
+    value: String(Number(amount || 0))
   };
+
+  return tx;
 }
 
 function createWarnings() {
@@ -167,18 +162,24 @@ function createWarnings() {
   ];
 }
 
-export async function prepareXrplSettlement({ amount, currency, receiveCurrency, recipient, reference }) {
+export async function prepareXrplSettlement({
+  amount,
+  currency,
+  receiveCurrency,
+  recipient,
+  reference
+}) {
   const config = getXrplConfig();
   const asset = createAssetDescriptor({ currency, receiveCurrency, config });
+
   const draft = createPaymentDraft({
     amount,
-    currency,
-    receiveCurrency,
     recipient,
     config,
     asset,
     reference
   });
+
   const health = config.networkCheckEnabled
     ? await checkXrplRpc(config)
     : { checked: false, ok: null };
@@ -257,7 +258,7 @@ export async function submitXrplSettlement({
 
   let wallet;
   try {
-    wallet = xrpl.Wallet.fromSeed(config.treasurySeed);
+    wallet = Wallet.fromSeed(config.treasurySeed);
   } catch (error) {
     return {
       ...prepared,
@@ -276,7 +277,7 @@ export async function submitXrplSettlement({
     };
   }
 
-  const client = new xrpl.Client(config.websocketUrl);
+  const client = new Client(config.websocketUrl);
 
   try {
     await client.connect();
