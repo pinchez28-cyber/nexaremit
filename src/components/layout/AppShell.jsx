@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, NavLink } from "react-router-dom";
-import { AlertTriangle, Bell, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Bell, LockKeyhole, ShieldCheck } from "lucide-react";
 import Logo from "@/components/branding/Logo";
 import { createPageUrl } from "@/utils";
 
@@ -19,43 +19,46 @@ const navItems = [
 export default function AppShell({ children }) {
   return (
     <div className="app-shell">
-      <div className="prototype-banner">
-        <div className="max-w-7xl mx-auto app-banner-inner">
-          <span className="banner-icon"><AlertTriangle className="w-4 h-4" /></span>
-          Testnet mode: quotes, card authorization, and transfer records are active here, while signed XRPL submission and live payout release are still being completed.
-        </div>
-      </div>
       <header className="app-header">
         <div className="max-w-7xl mx-auto app-header-inner">
           <Link to="/" aria-label="Go to NexaRemit home">
             <Logo className="app-logo" />
           </Link>
+
           <nav className="app-nav" aria-label="Primary navigation">
             {navItems.map((item) => (
-              <NavLink key={item.label} to={item.to} className={({ isActive }) => `app-nav-link ${isActive ? "is-active" : ""}`}>
+              <NavLink
+                key={item.label}
+                to={item.to}
+                className={({ isActive }) => `app-nav-link ${isActive ? "is-active" : ""}`}
+              >
                 {item.label}
               </NavLink>
             ))}
           </nav>
+
           <div className="header-actions">
             <div className="header-trust">
               <ShieldCheck className="w-4 h-4" />
-              <span>Testnet</span>
+              <span>Secure Transfer</span>
             </div>
+
             <button type="button" className="icon-button" aria-label="Notifications">
               <Bell className="w-5 h-5" />
             </button>
           </div>
         </div>
       </header>
+
       <main>{children}</main>
+
       <footer className="app-footer">
         <div className="max-w-7xl mx-auto app-footer-inner">
           <div className="footer-lockup">
             <LockKeyhole className="w-5 h-5" />
-            <span>Designed for regulated money movement. Connect licensed partners before launch.</span>
+            <span>Designed for regulated money movement and secure cross-border transfers.</span>
           </div>
-          <span>NexaRemit testnet workspace</span>
+          <span>NexaRemit</span>
         </div>
       </footer>
     </div>
