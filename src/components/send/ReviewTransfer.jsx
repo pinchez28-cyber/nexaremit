@@ -21,16 +21,12 @@ function formatStatus(status) {
   return statusLabels[status] || status.replace(/_/g, " ");
 }
 
-function formatNetwork(network) {
-  if (!network) return "XRPL Testnet";
-  return `XRPL ${network.charAt(0).toUpperCase()}${network.slice(1)}`;
+function getModeLabel() {
+  return "Quote ready";
 }
 
-function getModeLabel(mode) {
-  if (!mode) return "Quote ready";
-  if (mode === "testnet") return "Testnet quote";
-  if (mode === "production") return "Production quote";
-  return mode.replace(/_/g, " ");
+function getSettlementRailLabel() {
+  return "XRPL";
 }
 
 export default function ReviewTransfer({ transferData, transferStatus, transferError, onConfirm, onBack }) {
@@ -90,7 +86,7 @@ export default function ReviewTransfer({ transferData, transferStatus, transferE
       <CardHeader>
         <div className="flex justify-between items-center gap-3">
           <CardTitle>Review Transfer</CardTitle>
-          <Badge className="bg-blue-100 text-blue-800">{getModeLabel(quote.mode)}</Badge>
+          <Badge className="bg-blue-100 text-blue-800">{getModeLabel()}</Badge>
         </div>
       </CardHeader>
 
@@ -198,9 +194,9 @@ export default function ReviewTransfer({ transferData, transferStatus, transferE
                 <Landmark className="w-5 h-5 text-blue-700" />
                 <span className="grid gap-2">
                   <strong className="text-primary">
-                    Settlement rail: {formatNetwork(settlement.network)}
+                    Settlement rail: {getSettlementRailLabel()}
                   </strong>
-                  <small className="text-neutral-600">{settlement.rail || "Settlement provider"}</small>
+                  <small className="text-neutral-600">XRPL settlement adapter</small>
                 </span>
               </span>
 
@@ -229,7 +225,7 @@ export default function ReviewTransfer({ transferData, transferStatus, transferE
                 <span className="grid gap-2 p-4 rounded-lg bg-white border border-neutral-200">
                   <small className="text-neutral-500 font-semibold">Mode</small>
                   <strong className="text-primary">
-                    {settlement.signingMode || quote.mode || "Not available"}
+                    {settlement.signingMode || "Settlement prepared"}
                   </strong>
                 </span>
               </section>

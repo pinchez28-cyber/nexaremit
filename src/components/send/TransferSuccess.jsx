@@ -15,7 +15,7 @@ function formatMoney(currency, amount) {
 
 function formatNetwork(network) {
   if (!network) return "";
-  return `XRPL ${network.charAt(0).toUpperCase()}${network.slice(1)}`;
+  return "XRPL";
 }
 
 function getStatusPresentation({ status, networkLabel, amountLabel, recipientName }) {
@@ -24,21 +24,21 @@ function getStatusPresentation({ status, networkLabel, amountLabel, recipientNam
       return {
         tone: "success",
         title: "Transfer Confirmed",
-        summary: `Your transfer for ${amountLabel} to ${recipientName} was confirmed${networkLabel ? ` on ${networkLabel}` : ""}.`
+        summary: `Your transfer for ${amountLabel} to ${recipientName} was confirmed${networkLabel ? ` through ${networkLabel} settlement` : ""}.`
       };
 
     case "submitted":
       return {
         tone: "success",
         title: "Transfer Submitted",
-        summary: `Your transfer for ${amountLabel} to ${recipientName} was submitted${networkLabel ? ` on ${networkLabel}` : ""} and is awaiting final confirmation.`
+        summary: `Your transfer for ${amountLabel} to ${recipientName} was submitted${networkLabel ? ` through ${networkLabel} settlement` : ""} and is awaiting final confirmation.`
       };
 
     case "funding_authorized":
       return {
         tone: "success",
         title: "Funding Authorized",
-        summary: `Funding is authorized for ${amountLabel}. Settlement is prepared${networkLabel ? ` on ${networkLabel}` : ""}.`
+        summary: `Funding is authorized for ${amountLabel}. Settlement is prepared${networkLabel ? ` through ${networkLabel}` : ""}.`
       };
 
     case "requires_payment_authorization":
@@ -52,7 +52,7 @@ function getStatusPresentation({ status, networkLabel, amountLabel, recipientNam
       return {
         tone: "warning",
         title: "Transfer Needs Attention",
-        summary: `Funding was collected for ${amountLabel}, but settlement could not be completed${networkLabel ? ` on ${networkLabel}` : ""}. Review the transfer details below.`
+        summary: `Funding was collected for ${amountLabel}, but settlement could not be completed${networkLabel ? ` through ${networkLabel}` : ""}. Review the transfer details below.`
       };
 
     case "blocked":
@@ -167,11 +167,11 @@ export default function TransferSuccess({ transferData, onDone }) {
                 <div className="grid gap-2 text-sm text-neutral-700">
                   <div className="flex justify-between gap-4">
                     <span className="text-neutral-500">Rail</span>
-                    <span className="font-medium text-right">{settlement.rail || "Settlement provider"}</span>
+                    <span className="font-medium text-right">{settlement.rail || "XRPL settlement adapter"}</span>
                   </div>
                   <div className="flex justify-between gap-4">
                     <span className="text-neutral-500">Network</span>
-                    <span className="font-medium text-right">{networkLabel || "Not specified"}</span>
+                    <span className="font-medium text-right">{networkLabel || "XRPL"}</span>
                   </div>
                   <div className="flex justify-between gap-4">
                     <span className="text-neutral-500">Asset</span>

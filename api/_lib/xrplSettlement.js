@@ -2,19 +2,19 @@ import { Buffer } from "node:buffer";
 
 const XRPL_NETWORKS = {
   testnet: {
-    label: "XRPL Testnet",
+    label: "XRPL",
     rpcUrl: "https://s.altnet.rippletest.net:51234/",
     websocketUrl: "wss://s.altnet.rippletest.net:51233/",
     explorerUrl: "https://testnet.xrpl.org"
   },
   devnet: {
-    label: "XRPL Devnet",
+    label: "XRPL",
     rpcUrl: "https://s.devnet.rippletest.net:51234/",
     websocketUrl: "wss://s.devnet.rippletest.net:51233/",
     explorerUrl: "https://devnet.xrpl.org"
   },
   mainnet: {
-    label: "XRPL Mainnet",
+    label: "XRPL",
     rpcUrl: "https://xrplcluster.com/",
     websocketUrl: "wss://xrplcluster.com/",
     explorerUrl: "https://livenet.xrpl.org"
@@ -188,7 +188,7 @@ export async function prepareXrplSettlement({
 
   return {
     provider: process.env.SETTLEMENT_PROVIDER || "xrpl",
-    rail: `${config.label} settlement adapter`,
+    rail: "XRPL settlement adapter",
     network: config.networkKey,
     endpoint: config.networkCheckEnabled ? config.rpcUrl : "network check disabled",
     websocketUrl: config.websocketUrl,
