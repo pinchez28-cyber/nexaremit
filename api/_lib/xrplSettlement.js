@@ -133,7 +133,7 @@ function createPaymentDraft({ amount, recipient, config, asset, reference }) {
     tx.Memos = [
       {
         Memo: {
-          MemoData: encodeMemoData(`NexaRemit testnet transfer ${reference}`)
+          MemoData: encodeMemoData(`NexaRemit transfer ${reference}`)
         }
       }
     ];
@@ -156,7 +156,7 @@ function createPaymentDraft({ amount, recipient, config, asset, reference }) {
 function createWarnings() {
   return [
     "Do not store XRPL wallet seeds in browser code.",
-    "Submit only on Testnet/Devnet until treasury controls, reconciliation, and compliance review are complete.",
+    "Submit only on approved XRPL environments until treasury controls, reconciliation, and compliance review are complete.",
     "Use issued currencies only after issuer, trustline, liquidity, and redemption procedures are verified."
   ];
 }
@@ -187,7 +187,7 @@ export async function prepareXrplSettlement({
   const hasIssuerForIssuedCurrency = asset.type === "native" || Boolean(config.issuerAddress);
 
   return {
-    provider: process.env.SETTLEMENT_PROVIDER || "xrpl-sandbox",
+    provider: process.env.SETTLEMENT_PROVIDER || "xrpl",
     rail: `${config.label} settlement adapter`,
     network: config.networkKey,
     endpoint: config.networkCheckEnabled ? config.rpcUrl : "network check disabled",
@@ -199,7 +199,7 @@ export async function prepareXrplSettlement({
     issuerConfigured: hasIssuerForIssuedCurrency,
     treasuryConfigured: hasTreasuryAddress,
     status: hasTreasuryAddress && hasIssuerForIssuedCurrency ? "prepared" : "configuration_required",
-    signingMode: "offline_or_custody_required",
+    signingMode: config.submitEnabled ? "Server submission enabled" : "Offline or custody required",
     transactionDraft: draft,
     health,
     warnings: createWarnings()
@@ -242,7 +242,7 @@ export async function submitXrplSettlement({
     return {
       ...prepared,
       status: "prepared",
-      note: "XRPL submission is disabled by XRPL_SUBMIT_ENABLED."
+      note: "XRPL submission is currently disabled for this environment."
     };
   }
 
@@ -250,7 +250,7 @@ export async function submitXrplSettlement({
     return {
       ...prepared,
       status: "settlement_failed",
-      signingMode: "server_seed",
+      signingMode: "Server submission",
       error: "XRPL_TREASURY_SEED is missing."
     };
   }
@@ -264,7 +264,7 @@ export async function submitXrplSettlement({
     return {
       ...prepared,
       status: "settlement_failed",
-      signingMode: "server_seed",
+      signingMode: "Server submission",
       error: `Failed to load xrpl runtime dependency: ${error.message}`
     };
   }
@@ -276,7 +276,7 @@ export async function submitXrplSettlement({
     return {
       ...prepared,
       status: "settlement_failed",
-      signingMode: "server_seed",
+      signingMode: "Server submission",
       error: `Failed to derive XRPL wallet from treasury seed: ${error.message}`
     };
   }
@@ -285,7 +285,7 @@ export async function submitXrplSettlement({
     return {
       ...prepared,
       status: "settlement_failed",
-      signingMode: "server_seed",
+      signingMode: "Server submission",
       error: "XRPL_TREASURY_SEED does not match XRPL_TREASURY_ADDRESS."
     };
   }
@@ -323,7 +323,7 @@ export async function submitXrplSettlement({
     return {
       ...prepared,
       status,
-      signingMode: "server_seed",
+      signingMode: "Server submission",
       transactionHash,
       ledgerIndex,
       engineResult,
@@ -335,7 +335,7 @@ export async function submitXrplSettlement({
     return {
       ...prepared,
       status: "settlement_failed",
-      signingMode: "server_seed",
+      signingMode: "Server submission",
       error: error.message
     };
   } finally {

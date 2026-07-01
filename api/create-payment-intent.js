@@ -22,12 +22,11 @@ export default async function handler(request, response) {
 
     const stripe = getStripe();
     if (!stripe) {
-      sendJson(response, 200, {
-        mode: "sandbox",
-        provider: "stripe-not-configured",
-        clientSecret: "pi_sandbox_secret_mock",
-        quote,
-        message: "Add STRIPE_SECRET_KEY in Vercel to create real Stripe test PaymentIntents."
+      sendJson(response, 503, {
+        error: "stripe_not_configured",
+        message: "Stripe is not configured for this deployment.",
+        mode: process.env.TRANSFER_MODE || "testnet",
+        provider: "stripe"
       });
       return;
     }
@@ -36,17 +35,18 @@ export default async function handler(request, response) {
       amount: toStripeAmount(quote.total, quote.currency),
       currency: quote.currency.toLowerCase(),
       automatic_payment_methods: { enabled: true },
+      capture_method: "manual",
       metadata: {
         quoteId: quote.id,
-        userId: user.id,
+        userId: user?.id || "anonymous",
         recipientName: body.recipient?.name || "unknown",
-        transferMode: process.env.TRANSFER_MODE || "sandbox"
+        transferMode: process.env.TRANSFER_MODE || "testnet"
       },
-      description: `NexaRemit sandbox transfer ${quote.id}`
+      description: `NexaRemit transfer ${quote.id}`
     });
 
     sendJson(response, 200, {
-      mode: process.env.TRANSFER_MODE || "sandbox",
+      mode: process.env.TRANSFER_MODE || "testnet",
       provider: "stripe",
       paymentIntentId: paymentIntent.id,
       clientSecret: paymentIntent.client_secret,

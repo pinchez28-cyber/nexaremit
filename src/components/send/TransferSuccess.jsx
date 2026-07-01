@@ -59,7 +59,7 @@ function getStatusPresentation({ status, networkLabel, amountLabel, recipientNam
       return {
         tone: "warning",
         title: "Transfer Blocked",
-        summary: `This transfer could not proceed because one or more safety or compliance checks blocked the request.`
+        summary: "This transfer could not proceed because one or more safety or compliance checks blocked the request."
       };
 
     default:
@@ -114,7 +114,7 @@ export default function TransferSuccess({ transferData, onDone }) {
         <CardContent className="p-8">
           <div className="text-center mb-8">
             <StatusIcon className={`w-16 h-16 mx-auto mb-5 ${iconColor}`} />
-            <div className="inline-flex px-3 py-1 rounded-full text-sm font-medium mb-4 ${badgeClasses}">
+            <div className={`inline-flex px-3 py-1 rounded-full text-sm font-medium mb-4 ${badgeClasses}`}>
               {transferStatus.replace(/_/g, " ")}
             </div>
             <h1 className="text-2xl font-bold text-primary mb-2">{presentation.title}</h1>

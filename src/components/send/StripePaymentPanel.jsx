@@ -18,6 +18,7 @@ function CheckoutForm({ onAuthorized }) {
 
     setIsSubmitting(true);
     setMessage("");
+
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
       redirect: "if_required"
@@ -28,6 +29,7 @@ function CheckoutForm({ onAuthorized }) {
     } else {
       onAuthorized(paymentIntent?.id || "stripe_authorized");
     }
+
     setIsSubmitting(false);
   };
 
@@ -35,16 +37,18 @@ function CheckoutForm({ onAuthorized }) {
     <form className="stripe-checkout-form" onSubmit={handleSubmit}>
       <PaymentElement />
       <p className="text-sm text-neutral-600">
-        To add a different test card, use the card option inside Stripe above. Use test cards only; do not enter real card or bank details.
+        Enter the card details required for the current environment and submit to authorize the transfer funding step.
       </p>
+
       {message && (
         <Alert className="border-red-200 bg-red-50">
           <AlertTriangle className="w-5 h-5 text-red-600" />
           <AlertDescription className="text-red-800">{message}</AlertDescription>
         </Alert>
       )}
+
       <Button className="w-full" disabled={!stripe || isSubmitting}>
-        {isSubmitting ? "Authorizing..." : "Authorize Test Payment"}
+        {isSubmitting ? "Authorizing..." : "Authorize Payment"}
       </Button>
     </form>
   );
@@ -62,18 +66,26 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
 
   useEffect(() => {
     let isMounted = true;
+
     async function createIntent() {
       if (!isStripeConfigured) return;
+
       setStatus("loading");
       setError("");
+
       try {
         const response = await fetch("/api/create-payment-intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(transferData)
         });
+
         const payload = await response.json();
-        if (!response.ok) throw new Error(getPaymentIntentError(payload));
+
+        if (!response.ok) {
+          throw new Error(getPaymentIntentError(payload));
+        }
+
         if (isMounted) {
           setClientSecret(payload.clientSecret);
           setStatus("ready");
@@ -85,7 +97,9 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
         }
       }
     }
+
     createIntent();
+
     return () => {
       isMounted = false;
     };
@@ -96,14 +110,14 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
       <Alert className="border-yellow-200 bg-yellow-50">
         <CreditCard className="w-5 h-5 text-yellow-600" />
         <AlertDescription className="text-yellow-800">
-          Stripe test payments are ready in code. Add <strong>VITE_STRIPE_PUBLISHABLE_KEY</strong> in Vercel to show the Payment Element.
+          Stripe is not configured for this deployment. Add <strong>VITE_STRIPE_PUBLISHABLE_KEY</strong> to enable the secure payment form.
         </AlertDescription>
       </Alert>
     );
   }
 
   if (status === "loading") {
-    return <div className="payment-loading">Preparing secure Stripe test payment...</div>;
+    return <div className="payment-loading">Preparing secure payment form...</div>;
   }
 
   if (status === "error") {
@@ -123,10 +137,11 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
         <div className="stripe-payment-head">
           <ShieldCheck className="w-5 h-5 text-green-600" />
           <div>
-            <h3>Secure test payment</h3>
-            <p>Use Stripe test card numbers only. Do not enter real card or bank details.</p>
+            <h3>Secure payment authorization</h3>
+            <p>Complete card authorization to fund this transfer.</p>
           </div>
         </div>
+
         <Elements stripe={stripePromise} options={{ clientSecret }} key={clientSecret}>
           <CheckoutForm onAuthorized={onAuthorized} />
         </Elements>

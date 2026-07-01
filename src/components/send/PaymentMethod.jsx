@@ -62,7 +62,7 @@ export default function PaymentMethod({ selectedMethod, transferData, onSelectMe
           <StripePaymentPanel
             transferData={transferData}
             onAuthorized={(paymentIntentId) =>
-              onSelectMethod({ type: "card", paymentIntentId })
+              onSelectMethod({ type: "card", provider: "stripe", paymentIntentId })
             }
           />
         )}

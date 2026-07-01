@@ -31,13 +31,17 @@ async function verifyStripeFundingAuthorization({ quote, paymentMethod }) {
     };
   }
 
-  if (paymentMethod.provider !== "stripe") {
+  const provider =
+    paymentMethod.provider ||
+    (paymentMethod.type === "card" && paymentMethod.paymentIntentId ? "stripe" : "unknown");
+
+  if (provider !== "stripe") {
     return {
       authorized: false,
-      provider: paymentMethod.provider || "unknown",
+      provider,
       paymentIntentId: paymentMethod.paymentIntentId || "",
       paymentStatus: "unsupported_provider",
-      reason: "Only Stripe payment authorization is supported."
+      reason: "Only Stripe-backed card authorization is currently supported."
     };
   }
 
@@ -52,6 +56,7 @@ async function verifyStripeFundingAuthorization({ quote, paymentMethod }) {
   }
 
   const stripe = getStripe();
+
   if (!stripe) {
     return {
       authorized: false,
@@ -191,7 +196,7 @@ export async function createTransferQuote({ user, amount, currency = "USD", reci
 
   return {
     id: `quote_${Date.now()}`,
-    mode: process.env.TRANSFER_MODE || "sandbox",
+    mode: process.env.TRANSFER_MODE || "testnet",
     amount: Number(amount || 0),
     currency,
     purpose,

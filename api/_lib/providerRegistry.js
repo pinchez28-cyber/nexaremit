@@ -2,7 +2,7 @@ import { getKycRecord } from "./kycRecords.js";
 import { screenSanctionsSubject } from "./sanctionsRecords.js";
 import { prepareXrplSettlement } from "./xrplSettlement.js";
 
-const sandboxRates = {
+const corridorRates = {
   USD: { NGN: 1650, KES: 129, GHS: 12.1, INR: 83.2, PHP: 57.5, MXN: 17.1, BRL: 5.1, PKR: 278, BDT: 117, ZAR: 18.2, EGP: 48.5, MAD: 10.0 },
   CAD: { NGN: 1210, KES: 94.5, GHS: 8.9, INR: 61.0, PHP: 42.1, MXN: 12.5, BRL: 3.75, PKR: 204, BDT: 86, ZAR: 13.3, EGP: 35.5, MAD: 7.3 },
   GBP: { NGN: 2080, KES: 165, GHS: 15.35, INR: 105.2, PHP: 72.8, MXN: 21.7, BRL: 6.5, PKR: 352, BDT: 148, ZAR: 23.0, EGP: 61.4, MAD: 12.7 },
@@ -27,7 +27,7 @@ export const providerRegistry = {
       provider: storedKyc.record.provider,
       status: storedKyc.record.status,
       reference: storedKyc.record.providerInquiryId || `kyc_${user?.id || "anonymous"}`,
-      source: storedKyc.configured ? "database" : "sandbox-header"
+      source: storedKyc.configured ? "database" : "header"
     };
   },
 
@@ -38,24 +38,25 @@ export const providerRegistry = {
       provider: screening.record.provider,
       status: screening.record.status,
       reference: screening.record.id,
-      source: screening.configured ? "database" : "sandbox"
+      source: screening.configured ? "database" : "rules"
     };
   },
 
   async createFundingIntent({ amount, currency }) {
     return {
-      provider: process.env.FUNDING_PROVIDER || "sandbox-funding",
+      provider: process.env.FUNDING_PROVIDER || "stripe-card",
       status: "requires_authorization",
-      clientSecret: "sandbox_client_secret_not_for_real_money",
+      clientSecret: "",
       amount,
       currency
     };
   },
 
   async createExchangeQuote({ amount, currency, receiveCurrency }) {
-    const rate = sandboxRates[currency]?.[receiveCurrency] || 1;
+    const rate = corridorRates[currency]?.[receiveCurrency] || 1;
+
     return {
-      provider: process.env.EXCHANGE_PROVIDER || "sandbox-fx",
+      provider: process.env.EXCHANGE_PROVIDER || "quote-engine",
       rate,
       receiveCurrency,
       receivedAmount: Number(amount || 0) * rate,
@@ -64,7 +65,8 @@ export const providerRegistry = {
   },
 
   async prepareSettlement({ amount, currency, receiveCurrency, recipient }) {
-    const settlementProvider = process.env.SETTLEMENT_PROVIDER || "xrpl-sandbox";
+    const settlementProvider = process.env.SETTLEMENT_PROVIDER || "xrpl";
+
     if (settlementProvider.toLowerCase().includes("xrpl")) {
       return prepareXrplSettlement({ amount, currency, receiveCurrency, recipient });
     }
@@ -79,7 +81,7 @@ export const providerRegistry = {
 
   async createPayoutIntent({ recipient, receiveCurrency }) {
     return {
-      provider: process.env.PAYOUT_PROVIDER || "sandbox-payout",
+      provider: process.env.PAYOUT_PROVIDER || "payout-queue",
       status: "queued",
       method: recipient?.method || "Bank transfer",
       receiveCurrency,
