@@ -1,8 +1,9 @@
-// api/kyc-start.js
+﻿// api/kyc-provider-start.js
 
 import {
   normalizeTransferMode,
   requireEnum,
+  requireEnv,
   requireUrl,
 } from "../src/lib/env.js";
 
@@ -12,15 +13,19 @@ const runtimeConfig = Object.freeze({
     "xrpl-mainnet",
   ]),
   xrplNetwork: requireEnum(process.env, "XRPL_NETWORK", ["mainnet"]),
-  kycStartUrl: requireUrl(process.env, "KYC_START_URL", ["https:"]),
+  personaApiKey: requireEnv(process.env, "PERSONA_API_KEY"),
+  personaTemplateId: requireEnv(process.env, "PERSONA_TEMPLATE_ID"),
+  personaCreateInquiryUrl: requireUrl(
+    process.env,
+    "PERSONA_CREATE_INQUIRY_URL",
+    ["https:"]
+  ),
 });
 
 function createHttpError(statusCode, message, details) {
   const error = new Error(message);
   error.statusCode = statusCode;
-  if (details !== undefined) {
-    error.details = details;
-  }
+  if (details !== undefined) error.details = details;
   return error;
 }
 
@@ -110,7 +115,6 @@ function normalizeMetadata(value) {
   ensurePlainObject(value, "metadata");
 
   const normalized = {};
-
   for (const [key, rawValue] of Object.entries(value)) {
     const normalizedKey = ensureNonEmptyString(key, "metadata key");
     if (rawValue === undefined || rawValue === null) continue;
@@ -121,53 +125,10 @@ function normalizeMetadata(value) {
   return normalized;
 }
 
-function assertNoNonProductionHints(body) {
-  const fieldsToCheck = [
-    ["transferMode", body.transferMode],
-    ["mode", body.mode],
-    ["provider", body.provider],
-    ["settlementProvider", body.settlementProvider],
-    ["xrplNetwork", body.xrplNetwork],
-    ["stripePublishableKey", body.stripePublishableKey],
-    ["publishableKey", body.publishableKey],
-    ["environment", body.environment],
-  ];
-
-  for (const [name, value] of fieldsToCheck) {
-    if (value === undefined || value === null || value === "") continue;
-
-    const normalized = String(value).trim().toLowerCase();
-
-    if (name === "stripePublishableKey" || name === "publishableKey") {
-      if (normalized.startsWith("pk_test_")) {
-        throw createHttpError(
-          400,
-          `${name} must not be a Stripe test publishable key`
-        );
-      }
-      continue;
-    }
-
-    if (
-      normalized.includes("testnet") ||
-      normalized.includes("sandbox") ||
-      normalized.includes("mock")
-    ) {
-      throw createHttpError(
-        400,
-        `${name} contains a non-production value: ${value}`
-      );
-    }
-  }
-}
-
 function assertProductionContext(body) {
-  assertNoNonProductionHints(body);
-
   if (body.transferMode !== undefined) {
     const raw = ensureNonEmptyString(body.transferMode, "transferMode").toLowerCase();
     const normalized = raw === "live" ? "production" : raw;
-
     if (normalized !== runtimeConfig.transferMode) {
       throw createHttpError(
         400,
@@ -232,7 +193,6 @@ function extractUpstreamErrorMessage(body, fallbackMessage) {
   if (typeof body === "object") {
     const message =
       body.message || body.error || body.details || body.title || body.code;
-
     if (typeof message === "string" && message.trim()) {
       return message.trim();
     }
@@ -241,19 +201,45 @@ function extractUpstreamErrorMessage(body, fallbackMessage) {
   return fallbackMessage;
 }
 
-function buildUpstreamPayload(body) {
+function buildPersonaPayload(body) {
   const user = ensurePlainObject(body.user, "user");
 
+  const nameFirst = ensureOptionalNonEmptyString(
+    user.firstName ?? user.first_name,
+    "user.firstName"
+  );
+  const nameLast = ensureOptionalNonEmptyString(
+    user.lastName ?? user.last_name,
+    "user.lastName"
+  );
+  const email = ensureOptionalNonEmptyString(user.email, "user.email");
+
   return {
-    transferMode: runtimeConfig.transferMode,
-    settlementProvider: runtimeConfig.settlementProvider,
-    provider: runtimeConfig.settlementProvider,
-    xrplNetwork: runtimeConfig.xrplNetwork,
-    user,
-    country: ensureOptionalNonEmptyString(body.country, "country"),
-    redirectUrl: ensureOptionalNonEmptyString(body.redirectUrl, "redirectUrl"),
-    referenceId: ensureOptionalNonEmptyString(body.referenceId, "referenceId"),
-    metadata: normalizeMetadata(body.metadata),
+    data: {
+      type: "inquiry",
+      attributes: {
+        "inquiry-template-id": runtimeConfig.personaTemplateId,
+        referenceId: ensureOptionalNonEmptyString(
+          body.referenceId ?? user.id,
+          "referenceId"
+        ),
+        redirectUri: ensureOptionalNonEmptyString(
+          body.redirectUrl,
+          "redirectUrl"
+        ),
+        fields: {
+          nameFirst,
+          nameLast,
+          email,
+        },
+        metadata: {
+          transferMode: runtimeConfig.transferMode,
+          settlementProvider: runtimeConfig.settlementProvider,
+          xrplNetwork: runtimeConfig.xrplNetwork,
+          ...(normalizeMetadata(body.metadata) || {}),
+        },
+      },
+    },
   };
 }
 
@@ -264,15 +250,14 @@ export default async function handler(req, res) {
     const body = getJsonBody(req);
     assertProductionContext(body);
 
-    const upstreamPayload = buildUpstreamPayload(body);
-
-    const response = await fetch(runtimeConfig.kycStartUrl, {
+    const response = await fetch(runtimeConfig.personaCreateInquiryUrl, {
       method: "POST",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
+        Authorization: `Bearer ${runtimeConfig.personaApiKey}`,
       },
-      body: JSON.stringify(upstreamPayload),
+      body: JSON.stringify(buildPersonaPayload(body)),
     });
 
     const upstreamBody = await parseUpstreamResponse(response);
@@ -282,7 +267,7 @@ export default async function handler(req, res) {
         response.status,
         extractUpstreamErrorMessage(
           upstreamBody,
-          `[kyc-start] Upstream request failed: ${response.status} ${response.statusText}`
+          `[kyc-provider-start] Upstream request failed: ${response.status} ${response.statusText}`
         ),
         upstreamBody
       );
