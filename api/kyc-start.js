@@ -474,33 +474,44 @@
       }
     }
 
-    const message = verificationUrl
-      ? "Identity check prepared. Opening Persona..."
-      : inquiryId
-        ? "Identity check prepared. Reference: " + inquiryId
-        : "Identity check prepared.";
+    let finalVerificationUrl = verificationUrl;
 
-    return sendJson(200, {
-      ok: true,
-      route: "kyc-start",
-      stage: "persona-success",
-      mode: config.transferMode,
-      settlementProvider: config.settlementProvider,
-      xrplNetwork: config.xrplNetwork,
-      provider: "persona",
-      message: message,
-      inquiryId: inquiryId || null,
-      inquiryStatus: inquiryStatus || null,
-      verificationUrl: verificationUrl || "",
-      hostedUrl: verificationUrl || "",
-      inquiryUrl: verificationUrl || "",
-      shortVerificationUrl: shortVerificationUrl || "",
-      hasVerificationUrl: Boolean(verificationUrl),
-      inquiry: createdInquiry,
-      meta: {
-        hasSessionToken: Boolean(sessionToken)
-      }
-    });
+if (!finalVerificationUrl && inquiryId && sessionToken) {
+  finalVerificationUrl =
+    "https://inquiry.withpersona.com/verify?inquiry-id=" +
+    encodeURIComponent(inquiryId) +
+    "&session-token=" +
+    encodeURIComponent(sessionToken);
+}
+
+const message = finalVerificationUrl
+  ? "Identity check prepared. Opening Persona..."
+  : inquiryId
+    ? "Identity check prepared. Reference: " + inquiryId
+    : "Identity check prepared.";
+
+return sendJson(200, {
+  ok: true,
+  route: "kyc-start",
+  stage: "persona-success",
+  mode: config.transferMode,
+  settlementProvider: config.settlementProvider,
+  xrplNetwork: config.xrplNetwork,
+  provider: "persona",
+  message: message,
+  inquiryId: inquiryId || null,
+  inquiryStatus: inquiryStatus || null,
+  verificationUrl: finalVerificationUrl || "",
+  hostedUrl: finalVerificationUrl || "",
+  inquiryUrl: finalVerificationUrl || "",
+  shortVerificationUrl: shortVerificationUrl || "",
+  hasVerificationUrl: Boolean(finalVerificationUrl),
+  inquiry: createdInquiry,
+  meta: {
+    hasSessionToken: Boolean(sessionToken)
+  }
+});
+
   } catch (error) {
     const status =
       Number.isInteger(error && error.statusCode) &&
@@ -518,3 +529,4 @@
     });
   }
 }
+
