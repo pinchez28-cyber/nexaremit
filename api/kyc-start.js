@@ -8,13 +8,15 @@
       try {
         res.statusCode = 500;
         res.setHeader("content-type", "application/json; charset=utf-8");
-        res.end(JSON.stringify({
-          ok: false,
-          route: "kyc-start",
-          stage: "send-json-fallback",
-          error: "Failed to send JSON response",
-          detail: String(sendError && sendError.message ? sendError.message : sendError)
-        }));
+        res.end(
+          JSON.stringify({
+            ok: false,
+            route: "kyc-start",
+            stage: "send-json-fallback",
+            error: "Failed to send JSON response",
+            detail: String(sendError && sendError.message ? sendError.message : sendError)
+          })
+        );
       } catch (_) {
         try {
           res.statusCode = 500;
@@ -99,7 +101,6 @@
   function requireEnv(name) {
     const value = normalize(process.env[name]);
     assert(value, "Missing required environment variable: " + name + ".", 500);
-    assert(!containsForbiddenMarker(value), "Unsafe value in environment variable: " + name + ".", 500);
     return value;
   }
 
@@ -140,6 +141,7 @@
     const transferMode = requireExactEnv("TRANSFER_MODE", "production");
     const settlementProvider = requireExactEnv("SETTLEMENT_PROVIDER", "xrpl-mainnet");
     const xrplNetwork = requireExactEnv("XRPL_NETWORK", "mainnet");
+
     const personaApiKey = requireEnv("PERSONA_API_KEY");
     const personaTemplateId = requireEnv("PERSONA_TEMPLATE_ID");
     const personaCreateInquiryUrl = requireHttpsUrl(
@@ -183,7 +185,7 @@
       const raw = Buffer.concat(chunks).toString("utf8").trim();
       if (!raw) return {};
       return JSON.parse(raw);
-    } catch (error) {
+    } catch (_) {
       const err = new Error("Request body is not valid JSON.");
       err.statusCode = 400;
       throw err;
@@ -311,7 +313,8 @@
           lowerKey.includes("api_key") ||
           lowerKey === "authorization" ||
           lowerKey === "token" ||
-          lowerKey === "secret"
+          lowerKey === "secret" ||
+          lowerKey === "session-token"
         ) {
           node[key] = "[redacted]";
           continue;
@@ -323,6 +326,41 @@
 
     walk(clone);
     return clone;
+  }
+
+  function getMetaValue(meta, key) {
+    if (!meta || typeof meta !== "object") return "";
+    return normalize(meta[key]);
+  }
+
+  async function postPersonaJson(url, apiKey, bodyObj) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + apiKey,
+        Accept: "application/json",
+        "Content-Type": "application/json"
+      },
+      body: bodyObj ? JSON.stringify(bodyObj) : "{}"
+    });
+
+    const text = await response.text();
+
+    let json = null;
+    if (text) {
+      try {
+        json = JSON.parse(text);
+      } catch (_) {
+        json = { raw: text };
+      }
+    }
+
+    return { response, json, text };
+  }
+
+  function buildResumeInquiryUrl(createInquiryUrl, inquiryId) {
+    const base = createInquiryUrl.replace(/\/+$/, "");
+    return base + "/" + encodeURIComponent(inquiryId) + "/resume";
   }
 
   try {
@@ -345,7 +383,10 @@
       });
     }
 
-    const contentType = normalizeLower(req.headers && (req.headers["content-type"] || req.headers["Content-Type"] || ""));
+    const contentType = normalizeLower(
+      req.headers && (req.headers["content-type"] || req.headers["Content-Type"] || "")
+    );
+
     if (contentType && contentType.indexOf("application/json") === -1) {
       return sendJson(415, {
         ok: false,
@@ -358,24 +399,21 @@
     const config = getRuntimeConfig();
     const body = await readBody();
     validateRequestBody(body);
+
     const personaPayload = buildPersonaPayload(body, config);
 
-    let personaResponse;
+    let createResult;
     try {
-      personaResponse = await fetch(config.personaCreateInquiryUrl, {
-        method: "POST",
-        headers: {
-          "Authorization": "Bearer " + config.personaApiKey,
-          "Accept": "application/json",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(personaPayload)
-      });
+      createResult = await postPersonaJson(
+        config.personaCreateInquiryUrl,
+        config.personaApiKey,
+        personaPayload
+      );
     } catch (error) {
       return sendJson(502, {
         ok: false,
         route: "kyc-start",
-        stage: "persona-fetch",
+        stage: "persona-create-fetch",
         error: "Failed to reach Persona API.",
         detail: String(error && error.message ? error.message : error),
         mode: config.transferMode,
@@ -385,47 +423,62 @@
       });
     }
 
-    let upstreamText = "";
-    try {
-      upstreamText = await personaResponse.text();
-    } catch (error) {
-      return sendJson(502, {
+    if (!createResult.response.ok) {
+      return sendJson(createResult.response.status || 502, {
         ok: false,
         route: "kyc-start",
-        stage: "persona-read-response",
-        error: "Failed to read Persona API response.",
-        detail: String(error && error.message ? error.message : error),
-        upstreamStatus: personaResponse.status
-      });
-    }
-
-    let upstreamJson = null;
-    if (upstreamText) {
-      try {
-        upstreamJson = JSON.parse(upstreamText);
-      } catch (_) {
-        upstreamJson = { raw: upstreamText };
-      }
-    }
-
-    if (!personaResponse.ok) {
-      return sendJson(personaResponse.status || 502, {
-        ok: false,
-        route: "kyc-start",
-        stage: "persona-api-error",
+        stage: "persona-create-error",
         error: "Persona inquiry creation failed.",
         mode: config.transferMode,
         settlementProvider: config.settlementProvider,
         xrplNetwork: config.xrplNetwork,
-        upstreamStatus: personaResponse.status,
-        upstream: redactUpstream(upstreamJson)
+        upstreamStatus: createResult.response.status,
+        upstream: redactUpstream(createResult.json)
       });
     }
 
-    const inquiry = upstreamJson && upstreamJson.data ? upstreamJson.data : null;
-    const inquiryId = inquiry && inquiry.id ? inquiry.id : null;
-    const inquiryAttributes = inquiry && inquiry.attributes ? inquiry.attributes : {};
-    const inquiryStatus = inquiryAttributes && inquiryAttributes.status ? inquiryAttributes.status : null;
+    const createdInquiry =
+      createResult.json && createResult.json.data ? createResult.json.data : null;
+    const createdMeta =
+      createResult.json && createResult.json.meta ? createResult.json.meta : {};
+
+    const inquiryId = normalize(createdInquiry && createdInquiry.id);
+    const inquiryAttributes =
+      createdInquiry && createdInquiry.attributes ? createdInquiry.attributes : {};
+    const inquiryStatus = normalize(inquiryAttributes && inquiryAttributes.status);
+
+    let verificationUrl =
+      getMetaValue(createdMeta, "one-time-link") ||
+      getMetaValue(createdMeta, "one-time-link-short");
+
+    let shortVerificationUrl = getMetaValue(createdMeta, "one-time-link-short");
+    let sessionToken = getMetaValue(createdMeta, "session-token");
+    let resumeMeta = null;
+
+    if (!verificationUrl && inquiryId) {
+      const resumeUrl = buildResumeInquiryUrl(config.personaCreateInquiryUrl, inquiryId);
+
+      try {
+        const resumeResult = await postPersonaJson(resumeUrl, config.personaApiKey, {});
+        if (resumeResult.response.ok) {
+          resumeMeta = resumeResult.json && resumeResult.json.meta ? resumeResult.json.meta : {};
+          verificationUrl =
+            getMetaValue(resumeMeta, "one-time-link") ||
+            getMetaValue(resumeMeta, "one-time-link-short") ||
+            verificationUrl;
+          shortVerificationUrl =
+            getMetaValue(resumeMeta, "one-time-link-short") || shortVerificationUrl;
+          sessionToken = getMetaValue(resumeMeta, "session-token") || sessionToken;
+        }
+      } catch (_) {
+      }
+    }
+
+    const message = verificationUrl
+      ? "Identity check prepared. Opening Persona..."
+      : inquiryId
+        ? "Identity check prepared. Reference: " + inquiryId
+        : "Identity check prepared.";
 
     return sendJson(200, {
       ok: true,
@@ -435,9 +488,18 @@
       settlementProvider: config.settlementProvider,
       xrplNetwork: config.xrplNetwork,
       provider: "persona",
-      inquiryId: inquiryId,
-      inquiryStatus: inquiryStatus,
-      inquiry: inquiry
+      message: message,
+      inquiryId: inquiryId || null,
+      inquiryStatus: inquiryStatus || null,
+      verificationUrl: verificationUrl || "",
+      hostedUrl: verificationUrl || "",
+      inquiryUrl: verificationUrl || "",
+      shortVerificationUrl: shortVerificationUrl || "",
+      hasVerificationUrl: Boolean(verificationUrl),
+      inquiry: createdInquiry,
+      meta: {
+        hasSessionToken: Boolean(sessionToken)
+      }
     });
   } catch (error) {
     const status =
