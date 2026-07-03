@@ -66,7 +66,6 @@ function cleanupReturnParams() {
 }
 
 export default function Setup() {
-  const popupRef = useRef(null);
   const pollRef = useRef(null);
   const closeTimerRef = useRef(null);
 
@@ -112,7 +111,7 @@ export default function Setup() {
         }));
 
         const res = await fetch(
-          `/api/kyc-status?inquiryId=${encodeURIComponent(inquiryId)}`,
+          `/api/kyc-start?inquiryId=${encodeURIComponent(inquiryId)}`,
           {
             method: "GET",
             headers: {
@@ -208,7 +207,6 @@ export default function Setup() {
     );
 
     if (popup && !popup.closed) {
-      popupRef.current = popup;
       try {
         popup.focus();
       } catch (_) {}
@@ -402,8 +400,7 @@ export default function Setup() {
         }}
       >
         <div style={{ marginBottom: 12 }}>
-          <strong>KYC status:</strong>{" "}
-          <span>{kyc.inquiryStatus || "idle"}</span>
+          <strong>KYC status:</strong> <span>{kyc.inquiryStatus || "idle"}</span>
         </div>
 
         <div style={{ marginBottom: 12 }}>
