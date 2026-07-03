@@ -13,6 +13,24 @@
     return "";
   };
 
+  const normalizeStatus = (value) =>
+    toStr(value).toLowerCase().replace(/\s+/g, "_");
+
+  const isTerminalStatus = (status) => {
+    const s = normalizeStatus(status);
+    return [
+      "completed",
+      "approved",
+      "passed",
+      "needs_review",
+      "declined",
+      "failed",
+      "expired",
+      "canceled",
+      "cancelled",
+    ].includes(s);
+  };
+
   const looksSandbox = (value) => /sandbox|simulated|demo/i.test(toStr(value));
 
   const deriveOrigin = () => {
@@ -84,15 +102,6 @@
   };
 
   try {
-    if (req.method !== "POST") {
-      return send(405, {
-        ok: false,
-        route: "kyc-start",
-        stage: "method-not-allowed",
-        error: "Method not allowed. Use POST.",
-      });
-    }
-
     const TRANSFER_MODE = toStr(process.env.TRANSFER_MODE);
     const XRPL_NETWORK = toStr(process.env.XRPL_NETWORK);
     const SETTLEMENT_PROVIDER = toStr(process.env.SETTLEMENT_PROVIDER);
@@ -168,7 +177,10 @@
       });
     }
 
-    if (/withpersona\.com\/api\/v1\/inquiries/i.test(PERSONA_CREATE_INQUIRY_URL) && !/api\.withpersona\.com/i.test(PERSONA_CREATE_INQUIRY_URL)) {
+    if (
+      /withpersona\.com\/api\/v1\/inquiries/i.test(PERSONA_CREATE_INQUIRY_URL) &&
+      !/api\.withpersona\.com/i.test(PERSONA_CREATE_INQUIRY_URL)
+    ) {
       return send(500, {
         ok: false,
         route: "kyc-start",
@@ -176,6 +188,120 @@
         error:
           "PERSONA_CREATE_INQUIRY_URL must use api.withpersona.com, not withpersona.com.",
         value: PERSONA_CREATE_INQUIRY_URL,
+      });
+    }
+
+    if (req.method === "GET") {
+      const inquiryId = pickFirstString(
+        req.query?.inquiryId,
+        req.query?.["inquiry-id"]
+      );
+
+      if (!inquiryId) {
+        return send(400, {
+          ok: false,
+          route: "kyc-start",
+          stage: "missing-inquiry-id",
+          action: "status",
+          error: "Missing inquiryId query parameter.",
+        });
+      }
+
+      const statusUrl = `${PERSONA_CREATE_INQUIRY_URL.replace(/\/+$/, "")}/${encodeURIComponent(
+        inquiryId
+      )}`;
+
+      const personaResponse = await fetch(statusUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${PERSONA_API_KEY}`,
+          Accept: "application/json",
+        },
+      });
+
+      const personaText = await personaResponse.text();
+      let personaJson = {};
+      try {
+        personaJson = personaText ? JSON.parse(personaText) : {};
+      } catch (_) {
+        personaJson = { raw: personaText };
+      }
+
+      if (!personaResponse.ok) {
+        return send(personaResponse.status || 502, {
+          ok: false,
+          route: "kyc-start",
+          stage: "persona-status-failed",
+          action: "status",
+          error: "Failed to retrieve Persona inquiry status.",
+          inquiryId,
+          personaStatus: personaResponse.status,
+          personaResponse: personaJson,
+        });
+      }
+
+      const data = personaJson?.data || {};
+      const attrs = data?.attributes || {};
+
+      const inquiryStatus = pickFirstString(attrs.status, "unknown");
+      const normalized = normalizeStatus(inquiryStatus);
+      const terminal = isTerminalStatus(inquiryStatus);
+
+      const decision = pickFirstString(
+        attrs.decision,
+        attrs["decision"],
+        attrs["review-status"],
+        attrs.reviewStatus
+      );
+
+      const completedAt = pickFirstString(
+        attrs["completed-at"],
+        attrs.completedAt,
+        attrs["updated-at"],
+        attrs.updatedAt
+      );
+
+      const referenceId = pickFirstString(
+        attrs["reference-id"],
+        attrs.referenceId
+      );
+
+      const passed =
+        ["approved", "passed"].includes(normalized) ||
+        (normalized === "completed" &&
+          !["declined", "failed"].includes(normalizeStatus(decision)));
+
+      return send(200, {
+        ok: true,
+        route: "kyc-start",
+        stage: "persona-status-success",
+        action: "status",
+        mode: "production",
+        provider: "persona",
+        inquiryId,
+        inquiryStatus,
+        normalizedStatus: normalized,
+        decision: decision || "",
+        isTerminal: terminal,
+        passed,
+        completedAt: completedAt || "",
+        referenceId: referenceId || "",
+        inquiry: {
+          id: inquiryId,
+          status: inquiryStatus,
+          decision: decision || "",
+          completedAt: completedAt || "",
+          referenceId: referenceId || "",
+        },
+      });
+    }
+
+    if (req.method !== "POST") {
+      return send(405, {
+        ok: false,
+        route: "kyc-start",
+        stage: "method-not-allowed",
+        error: "Method not allowed. Use POST or GET.",
       });
     }
 
@@ -244,6 +370,7 @@
         ok: false,
         route: "kyc-start",
         stage: "persona-create-failed",
+        action: "create",
         error: "Persona inquiry creation failed.",
         personaStatus: personaResponse.status,
         personaResponse: personaJson,
@@ -310,6 +437,7 @@
         ok: false,
         route: "kyc-start",
         stage: "persona-response-invalid",
+        action: "create",
         error: "Persona response did not contain an inquiry ID.",
         personaResponse: personaJson,
       });
@@ -319,22 +447,29 @@
       ok: true,
       route: "kyc-start",
       stage: "persona-success",
+      action: "create",
       mode: "production",
       provider: "persona",
+      message: finalVerificationUrl
+        ? "Identity check prepared. Opening Persona..."
+        : "Identity check prepared.",
       inquiryId,
       inquiryStatus,
       referenceId,
       verificationUrl: finalVerificationUrl,
       hostedUrl: finalVerificationUrl,
+      inquiryUrl: finalVerificationUrl,
       shortVerificationUrl: shortVerificationUrl || "",
       hasVerificationUrl: Boolean(finalVerificationUrl),
       hasSessionToken: Boolean(sessionToken),
-      sessionToken: sessionToken || "",
       redirectUri,
       inquiry: {
         id: inquiryId,
         status: inquiryStatus,
         referenceId,
+      },
+      meta: {
+        hasSessionToken: Boolean(sessionToken),
       },
     });
   } catch (err) {
