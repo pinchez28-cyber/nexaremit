@@ -1,8 +1,6 @@
 ﻿import Stripe from "stripe";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
-  // Use account default API version from your Stripe SDK/account.
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
 
 export default async function handler(req, res) {
   const send = (status, body) => {
@@ -107,11 +105,11 @@ export default async function handler(req, res) {
     const currency = safeCurrency(body.currency) || DEFAULT_CURRENCY || "usd";
     const customerId = toStr(body.customerId);
     const receiptEmail = toStr(body.receiptEmail || body.email);
-    const description =
-      toStr(body.description) || "NexaRemit transfer funding";
+    const description = toStr(body.description) || "NexaRemit transfer funding";
     const referenceId =
       toStr(body.referenceId) ||
       `nexaremit-pi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
     const metadata = normalizeMetadata({
       referenceId,
       transferId: body.transferId,
@@ -145,7 +143,6 @@ export default async function handler(req, res) {
       amount,
       currency,
       payment_method_types: ["card"],
-      automatic_payment_methods: { enabled: false },
       confirmation_method: "automatic",
       capture_method: "automatic",
       description,
