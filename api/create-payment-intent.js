@@ -1,61 +1,202 @@
-import { getRequestUser, readJson, requireMethod, sendJson } from "./_lib/http.js";
-import { createTransferQuote } from "./_lib/transferService.js";
-import { getStripe, toStripeAmount } from "./_lib/stripeClient.js";
+﻿import Stripe from "stripe";
 
-export default async function handler(request, response) {
-  if (!requireMethod(request, response, ["POST"])) return;
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
+  // Use account default API version from your Stripe SDK/account.
+});
+
+export default async function handler(req, res) {
+  const send = (status, body) => {
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(status).json(body);
+  };
+
+  const toStr = (v) => (typeof v === "string" ? v.trim() : "");
+  const toInt = (v) => {
+    const n = Number(v);
+    return Number.isInteger(n) ? n : NaN;
+  };
+
+  const isLikelyTestKey = (value) => /^sk_test_/i.test(toStr(value));
+  const isLikelyLiveKey = (value) => /^sk_live_/i.test(toStr(value));
+
+  const safeCurrency = (value) => {
+    const c = toStr(value).toLowerCase();
+    return /^[a-z]{3}$/.test(c) ? c : "";
+  };
+
+  const normalizeMetadata = (obj) => {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return {};
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) {
+      const key = toStr(k).slice(0, 40);
+      if (!key) continue;
+      out[key] = toStr(v).slice(0, 500);
+    }
+    return out;
+  };
 
   try {
-    const body = await readJson(request);
-    const user = getRequestUser(request);
-    const quote = await createTransferQuote({ user, ...body });
-
-    if (!quote.safety.passed) {
-      sendJson(response, 422, {
-        error: "transfer_blocked",
-        message: quote.safety.failures?.join(" ") || "Transfer blocked by safety checks.",
-        safety: quote.safety,
-        providers: quote.providers
+    if (req.method !== "POST") {
+      return send(405, {
+        ok: false,
+        route: "create-payment-intent",
+        stage: "method-not-allowed",
+        error: "Method not allowed. Use POST.",
       });
-      return;
     }
 
-    const stripe = getStripe();
-    if (!stripe) {
-      sendJson(response, 503, {
-        error: "stripe_not_configured",
-        message: "Stripe is not configured for this deployment.",
-        mode: process.env.TRANSFER_MODE || "testnet",
-        provider: "stripe"
+    const TRANSFER_MODE = toStr(process.env.TRANSFER_MODE);
+    const STRIPE_SECRET_KEY = toStr(process.env.STRIPE_SECRET_KEY);
+    const STRIPE_ACCOUNT_ID = toStr(process.env.STRIPE_ACCOUNT_ID);
+    const DEFAULT_CURRENCY = safeCurrency(process.env.STRIPE_CURRENCY || "usd");
+
+    if (TRANSFER_MODE && TRANSFER_MODE !== "production") {
+      return send(500, {
+        ok: false,
+        route: "create-payment-intent",
+        stage: "env-validation",
+        error: "TRANSFER_MODE must be 'production' for this endpoint.",
+        value: TRANSFER_MODE,
       });
-      return;
     }
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: toStripeAmount(quote.total, quote.currency),
-      currency: quote.currency.toLowerCase(),
-      automatic_payment_methods: { enabled: true },
-      capture_method: "manual",
-      metadata: {
-        quoteId: quote.id,
-        userId: user?.id || "anonymous",
-        recipientName: body.recipient?.name || "unknown",
-        transferMode: process.env.TRANSFER_MODE || "testnet"
-      },
-      description: `NexaRemit transfer ${quote.id}`
+    if (!STRIPE_SECRET_KEY) {
+      return send(500, {
+        ok: false,
+        route: "create-payment-intent",
+        stage: "env-validation",
+        error: "Missing STRIPE_SECRET_KEY.",
+      });
+    }
+
+    if (isLikelyTestKey(STRIPE_SECRET_KEY)) {
+      return send(500, {
+        ok: false,
+        route: "create-payment-intent",
+        stage: "env-validation",
+        error: "Unsafe value in environment variable: STRIPE_SECRET_KEY is a test key.",
+      });
+    }
+
+    if (!isLikelyLiveKey(STRIPE_SECRET_KEY)) {
+      return send(500, {
+        ok: false,
+        route: "create-payment-intent",
+        stage: "env-validation",
+        error: "STRIPE_SECRET_KEY does not appear to be a live secret key.",
+      });
+    }
+
+    let body = {};
+    try {
+      body =
+        typeof req.body === "string"
+          ? JSON.parse(req.body || "{}")
+          : req.body || {};
+    } catch (err) {
+      return send(400, {
+        ok: false,
+        route: "create-payment-intent",
+        stage: "body-parse",
+        error: "Invalid JSON request body.",
+        details: toStr(err?.message),
+      });
+    }
+
+    const amount = toInt(body.amount);
+    const currency = safeCurrency(body.currency) || DEFAULT_CURRENCY || "usd";
+    const customerId = toStr(body.customerId);
+    const receiptEmail = toStr(body.receiptEmail || body.email);
+    const description =
+      toStr(body.description) || "NexaRemit transfer funding";
+    const referenceId =
+      toStr(body.referenceId) ||
+      `nexaremit-pi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const metadata = normalizeMetadata({
+      referenceId,
+      transferId: body.transferId,
+      senderId: body.senderId,
+      recipientId: body.recipientId,
+      corridor: body.corridor,
+      payoutCountry: body.payoutCountry,
+      source: "nexaremit-sendmoney",
+      ...(body.metadata || {}),
     });
 
-    sendJson(response, 200, {
-      mode: process.env.TRANSFER_MODE || "testnet",
+    if (!Number.isInteger(amount) || amount <= 0) {
+      return send(400, {
+        ok: false,
+        route: "create-payment-intent",
+        stage: "input-validation",
+        error: "amount must be a positive integer in the smallest currency unit.",
+      });
+    }
+
+    if (currency === "usd" && amount < 50) {
+      return send(400, {
+        ok: false,
+        route: "create-payment-intent",
+        stage: "input-validation",
+        error: "amount must be at least 50 cents for usd card charges.",
+      });
+    }
+
+    const createParams = {
+      amount,
+      currency,
+      payment_method_types: ["card"],
+      automatic_payment_methods: { enabled: false },
+      confirmation_method: "automatic",
+      capture_method: "automatic",
+      description,
+      metadata,
+      setup_future_usage: "off_session",
+    };
+
+    if (customerId) {
+      createParams.customer = customerId;
+    }
+
+    if (receiptEmail) {
+      createParams.receipt_email = receiptEmail;
+    }
+
+    const requestOptions = STRIPE_ACCOUNT_ID
+      ? { stripeAccount: STRIPE_ACCOUNT_ID }
+      : undefined;
+
+    const intent = await stripe.paymentIntents.create(
+      createParams,
+      requestOptions
+    );
+
+    return send(200, {
+      ok: true,
+      route: "create-payment-intent",
+      stage: "payment-intent-created",
       provider: "stripe",
-      paymentIntentId: paymentIntent.id,
-      clientSecret: paymentIntent.client_secret,
-      quote
+      mode: "production",
+      paymentIntentId: intent.id,
+      clientSecret: intent.client_secret,
+      amount: intent.amount,
+      currency: intent.currency,
+      status: intent.status,
+      paymentMethodTypes: intent.payment_method_types || ["card"],
+      livemode: Boolean(intent.livemode),
+      referenceId,
     });
-  } catch (error) {
-    sendJson(response, error.code === "invalid_json" ? 400 : 500, {
-      error: error.code || "payment_intent_failed",
-      message: error.message
+  } catch (err) {
+    const type = toStr(err?.type);
+    const code = toStr(err?.code);
+    const message = toStr(err?.message) || "Unexpected Stripe error.";
+
+    return send(500, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "top-level-catch",
+      error: message,
+      stripeType: type || "",
+      stripeCode: code || "",
     });
   }
 }
