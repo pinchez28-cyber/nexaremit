@@ -14,7 +14,7 @@
             route: "kyc-start",
             stage: "send-json-fallback",
             error: "Failed to send JSON response",
-            detail: String(sendError && sendError.message ? sendError.message : sendError)
+            detail: String(sendError && sendError.message ? sendError.message : sendError),
           })
         );
       } catch (_) {
@@ -161,8 +161,66 @@
       xrplNetwork,
       personaApiKey,
       personaTemplateId,
-      personaCreateInquiryUrl
+      personaCreateInquiryUrl,
     };
+  }
+
+  function getPublicBaseUrl(req) {
+    const origin = normalize(
+      req.headers &&
+        (req.headers.origin ||
+          req.headers.Origin ||
+          req.headers["x-forwarded-origin"] ||
+          req.headers["X-Forwarded-Origin"])
+    );
+
+    if (origin) {
+      try {
+        const parsed = new URL(origin);
+        if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+          return parsed.origin;
+        }
+      } catch (_) {}
+    }
+
+    const proto = normalize(
+      req.headers &&
+        (req.headers["x-forwarded-proto"] ||
+          req.headers["X-Forwarded-Proto"] ||
+          "https")
+    ) || "https";
+
+    const host = normalize(
+      req.headers &&
+        (req.headers["x-forwarded-host"] ||
+          req.headers["X-Forwarded-Host"] ||
+          req.headers.host ||
+          req.headers.Host)
+    );
+
+    assert(host, "Could not determine public host.", 500);
+
+    return proto + "://" + host;
+  }
+
+  function buildRedirectUri(req, inquiryId) {
+    const baseUrl = getPublicBaseUrl(req).replace(/\/+$/, "");
+    const callback = new URL(baseUrl + "/Setup");
+    callback.searchParams.set("inquiry-id", inquiryId);
+    return callback.toString();
+  }
+
+  function addRedirectUriToHostedUrl(urlValue, redirectUri) {
+    const raw = normalize(urlValue);
+    if (!raw) return "";
+
+    try {
+      const url = new URL(raw);
+      url.searchParams.set("redirect-uri", redirectUri);
+      return url.toString();
+    } catch (_) {
+      return raw;
+    }
   }
 
   async function readBody() {
@@ -260,7 +318,7 @@
 
     const attributes = {
       inquiry_template_id: config.personaTemplateId,
-      reference_id: referenceId
+      reference_id: referenceId,
     };
 
     if (body.note !== undefined) {
@@ -278,8 +336,8 @@
     const payload = {
       data: {
         type: "inquiry",
-        attributes: attributes
-      }
+        attributes,
+      },
     };
 
     if (body.accountId !== undefined && normalize(body.accountId)) {
@@ -287,9 +345,9 @@
         account: {
           data: {
             type: "account",
-            id: normalize(body.accountId)
-          }
-        }
+            id: normalize(body.accountId),
+          },
+        },
       };
     }
 
@@ -339,9 +397,9 @@
       headers: {
         Authorization: "Bearer " + apiKey,
         Accept: "application/json",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       },
-      body: bodyObj ? JSON.stringify(bodyObj) : "{}"
+      body: bodyObj ? JSON.stringify(bodyObj) : "{}",
     });
 
     const text = await response.text();
@@ -379,7 +437,7 @@
         stage: "method-check",
         error: "Method Not Allowed",
         method: req.method || null,
-        allowedMethods: ["POST", "OPTIONS"]
+        allowedMethods: ["POST", "OPTIONS"],
       });
     }
 
@@ -392,7 +450,7 @@
         ok: false,
         route: "kyc-start",
         stage: "content-type-check",
-        error: 'Content-Type must include "application/json".'
+        error: 'Content-Type must include "application/json".',
       });
     }
 
@@ -419,7 +477,7 @@
         mode: config.transferMode,
         settlementProvider: config.settlementProvider,
         xrplNetwork: config.xrplNetwork,
-        personaUrl: config.personaCreateInquiryUrl
+        personaUrl: config.personaCreateInquiryUrl,
       });
     }
 
@@ -433,7 +491,7 @@
         settlementProvider: config.settlementProvider,
         xrplNetwork: config.xrplNetwork,
         upstreamStatus: createResult.response.status,
-        upstream: redactUpstream(createResult.json)
+        upstream: redactUpstream(createResult.json),
       });
     }
 
@@ -447,25 +505,18 @@
       createdInquiry && createdInquiry.attributes ? createdInquiry.attributes : {};
     const inquiryStatus = normalize(inquiryAttributes && inquiryAttributes.status);
 
-    let verificationUrl =
-      getMetaValue(createdMeta, "one-time-link") ||
-      getMetaValue(createdMeta, "one-time-link-short");
-
+    let longVerificationUrl = getMetaValue(createdMeta, "one-time-link");
     let shortVerificationUrl = getMetaValue(createdMeta, "one-time-link-short");
     let sessionToken = getMetaValue(createdMeta, "session-token");
-    let resumeMeta = null;
 
-    if (!verificationUrl && inquiryId) {
+    if ((!longVerificationUrl || !sessionToken) && inquiryId) {
       const resumeUrl = buildResumeInquiryUrl(config.personaCreateInquiryUrl, inquiryId);
 
       try {
         const resumeResult = await postPersonaJson(resumeUrl, config.personaApiKey, {});
         if (resumeResult.response.ok) {
-          resumeMeta = resumeResult.json && resumeResult.json.meta ? resumeResult.json.meta : {};
-          verificationUrl =
-            getMetaValue(resumeMeta, "one-time-link") ||
-            getMetaValue(resumeMeta, "one-time-link-short") ||
-            verificationUrl;
+          const resumeMeta = resumeResult.json && resumeResult.json.meta ? resumeResult.json.meta : {};
+          longVerificationUrl = getMetaValue(resumeMeta, "one-time-link") || longVerificationUrl;
           shortVerificationUrl =
             getMetaValue(resumeMeta, "one-time-link-short") || shortVerificationUrl;
           sessionToken = getMetaValue(resumeMeta, "session-token") || sessionToken;
@@ -474,44 +525,52 @@
       }
     }
 
-    let finalVerificationUrl = verificationUrl;
+    const redirectUri = inquiryId ? buildRedirectUri(req, inquiryId) : "";
+    let finalVerificationUrl = "";
 
-if (!finalVerificationUrl && inquiryId && sessionToken) {
-  finalVerificationUrl =
-    "https://inquiry.withpersona.com/verify?inquiry-id=" +
-    encodeURIComponent(inquiryId) +
-    "&session-token=" +
-    encodeURIComponent(sessionToken);
-}
+    if (longVerificationUrl) {
+      finalVerificationUrl = redirectUri
+        ? addRedirectUriToHostedUrl(longVerificationUrl, redirectUri)
+        : longVerificationUrl;
+    }
 
-const message = finalVerificationUrl
-  ? "Identity check prepared. Opening Persona..."
-  : inquiryId
-    ? "Identity check prepared. Reference: " + inquiryId
-    : "Identity check prepared.";
+    if (!finalVerificationUrl && inquiryId && sessionToken) {
+      const hostedUrl = new URL("https://inquiry.withpersona.com/verify");
+      hostedUrl.searchParams.set("inquiry-id", inquiryId);
+      hostedUrl.searchParams.set("session-token", sessionToken);
+      if (redirectUri) {
+        hostedUrl.searchParams.set("redirect-uri", redirectUri);
+      }
+      finalVerificationUrl = hostedUrl.toString();
+    }
 
-return sendJson(200, {
-  ok: true,
-  route: "kyc-start",
-  stage: "persona-success",
-  mode: config.transferMode,
-  settlementProvider: config.settlementProvider,
-  xrplNetwork: config.xrplNetwork,
-  provider: "persona",
-  message: message,
-  inquiryId: inquiryId || null,
-  inquiryStatus: inquiryStatus || null,
-  verificationUrl: finalVerificationUrl || "",
-  hostedUrl: finalVerificationUrl || "",
-  inquiryUrl: finalVerificationUrl || "",
-  shortVerificationUrl: shortVerificationUrl || "",
-  hasVerificationUrl: Boolean(finalVerificationUrl),
-  inquiry: createdInquiry,
-  meta: {
-    hasSessionToken: Boolean(sessionToken)
-  }
-});
+    const message = finalVerificationUrl
+      ? "Identity check prepared. Opening Persona..."
+      : inquiryId
+        ? "Identity check prepared. Reference: " + inquiryId
+        : "Identity check prepared.";
 
+    return sendJson(200, {
+      ok: true,
+      route: "kyc-start",
+      stage: "persona-success",
+      mode: config.transferMode,
+      settlementProvider: config.settlementProvider,
+      xrplNetwork: config.xrplNetwork,
+      provider: "persona",
+      message,
+      inquiryId: inquiryId || null,
+      inquiryStatus: inquiryStatus || null,
+      verificationUrl: finalVerificationUrl || "",
+      hostedUrl: finalVerificationUrl || "",
+      inquiryUrl: finalVerificationUrl || "",
+      shortVerificationUrl: shortVerificationUrl || "",
+      hasVerificationUrl: Boolean(finalVerificationUrl),
+      inquiry: createdInquiry,
+      meta: {
+        hasSessionToken: Boolean(sessionToken),
+      },
+    });
   } catch (error) {
     const status =
       Number.isInteger(error && error.statusCode) &&
@@ -525,8 +584,7 @@ return sendJson(200, {
       route: "kyc-start",
       stage: "top-level-catch",
       error: String(error && error.message ? error.message : error),
-      checkedAt: new Date().toISOString()
+      checkedAt: new Date().toISOString(),
     });
   }
 }
-
