@@ -1,813 +1,560 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const STEPS = ["Sender", "Receiver", "Review"];
+const RETURN_STORAGE_KEY = "nexaremit:persona:return";
 
-const NEEDS = [
-  "Sender name and phone number",
-  "Receiver name and country",
-  "How the receiver wants to collect money",
-];
-
-const COUNTRIES = [
-  { label: "Kenya", code: "KE" },
-  { label: "Nigeria", code: "NG" },
-  { label: "Ghana", code: "GH" },
-  { label: "India", code: "IN" },
-  { label: "Philippines", code: "PH" },
-  { label: "Mexico", code: "MX" },
-  { label: "Brazil", code: "BR" },
-  { label: "Pakistan", code: "PK" },
-  { label: "Bangladesh", code: "BD" },
-  { label: "South Africa", code: "ZA" },
-  { label: "Egypt", code: "EG" },
-  { label: "Morocco", code: "MA" },
-  { label: "Other supported country", code: "OTHER" },
-];
-
-const PAYOUT_OPTIONS = [
-  {
-    id: "bank",
-    label: "Bank account",
-    helper: "Best for receivers who use a bank.",
-    icon: "🏦",
-  },
-  {
-    id: "mobile",
-    label: "Mobile money",
-    helper: "Good for quick phone-based payouts.",
-    icon: "📱",
-  },
-  {
-    id: "cash",
-    label: "Cash pickup",
-    helper: "Useful when the receiver does not use banking apps.",
-    icon: "💵",
-  },
-];
-
-const TERMINAL_STATUSES = new Set([
-  "completed",
-  "approved",
-  "declined",
-  "failed",
-  "expired",
-  "redacted",
-]);
-
-function splitFullName(fullName) {
-  const cleaned = String(fullName || "").trim().replace(/\s+/g, " ");
-  if (!cleaned) {
-    return { first: "", last: "" };
-  }
-
-  const parts = cleaned.split(" ");
-  if (parts.length === 1) {
-    return { first: parts[0], last: "" };
-  }
-
-  return {
-    first: parts[0],
-    last: parts.slice(1).join(" "),
-  };
+function normalizeStatus(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
 }
 
-function getStatusMessage(status) {
-  const normalized = String(status || "").toLowerCase();
+function isTerminalStatus(status) {
+  return [
+    "completed",
+    "approved",
+    "passed",
+    "needs_review",
+    "declined",
+    "failed",
+    "expired",
+    "canceled",
+    "cancelled",
+  ].includes(normalizeStatus(status));
+}
 
-  if (normalized === "created") {
-    return "Identity check created. Waiting for the user to begin verification.";
+function isSuccessfulStatus(status) {
+  return ["completed", "approved", "passed"].includes(normalizeStatus(status));
+}
+
+function messageForStatus(status) {
+  const s = normalizeStatus(status);
+
+  if (!s || s === "idle") return "Start your live identity check to continue.";
+  if (["created", "pending", "initiated"].includes(s)) {
+    return "Identity check created. Complete the Persona flow to continue.";
   }
-  if (normalized === "pending") {
+  if (["in_progress", "processing"].includes(s)) {
     return "Identity verification is in progress.";
   }
-  if (normalized === "completed") {
-    return "Identity verification completed successfully.";
+  if (["completed", "approved", "passed"].includes(s)) {
+    return "Identity verification is complete.";
   }
-  if (normalized === "approved") {
-    return "Identity verification approved.";
+  if (s === "needs_review") {
+    return "Identity verification was submitted and is under review.";
   }
-  if (normalized === "declined") {
-    return "Identity verification was declined.";
-  }
-  if (normalized === "failed") {
-    return "Identity verification failed.";
-  }
-  if (normalized === "expired") {
-    return "Identity verification expired.";
-  }
-  if (normalized === "needs_review" || normalized === "marked_for_review") {
-    return "Identity verification requires review.";
+  if (["declined", "failed", "expired", "canceled", "cancelled"].includes(s)) {
+    return "Identity verification did not complete successfully.";
   }
 
-  return status
-    ? `Identity verification status: ${status}`
-    : "Identity verification status is unavailable.";
+  return `Identity verification status: ${status}`;
 }
 
-function normalizeKycStartResponse(payload) {
-  const inquiry = payload?.inquiry ?? null;
-
-  const verificationUrl =
-    payload?.verificationUrl ||
-    payload?.hostedUrl ||
-    payload?.inquiryUrl ||
-    inquiry?.attributes?.verification_url ||
-    inquiry?.attributes?.["verification-url"] ||
-    "";
-
-  const inquiryId = payload?.inquiryId || inquiry?.id || "";
-  const inquiryStatus = payload?.inquiryStatus || inquiry?.attributes?.status || "";
-  const stage = payload?.stage || "";
-
-  const message =
-    payload?.message ||
-    (payload?.ok
-      ? verificationUrl
-        ? "Identity check prepared. Opening Persona..."
-        : inquiryId
-          ? `Identity check prepared. Reference: ${inquiryId}`
-          : "Identity check prepared."
-      : payload?.error || "Failed to prepare identity check.");
-
-  return {
-    ok: payload?.ok === true,
-    message,
-    inquiryId,
-    inquiryStatus,
-    verificationUrl,
-    stage,
-    raw: payload,
-  };
-}
-
-function normalizeKycStatusResponse(payload) {
-  const inquiry = payload?.inquiry ?? null;
-  const inquiryId = payload?.inquiryId || inquiry?.id || "";
-  const inquiryStatus = payload?.inquiryStatus || inquiry?.attributes?.status || "";
-  const stage = payload?.stage || "";
-  const message = payload?.message || getStatusMessage(inquiryStatus);
-
-  return {
-    ok: payload?.ok === true,
-    message,
-    inquiryId,
-    inquiryStatus,
-    verificationUrl: "",
-    stage,
-    isTerminal: Boolean(payload?.isTerminal) || TERMINAL_STATUSES.has(String(inquiryStatus || "").toLowerCase()),
-    raw: payload,
-  };
-}
-
-function getKycMessageStyle(status) {
-  if (status === "error") {
-    return {
-      background: "#fef2f2",
-      border: "1px solid #fecaca",
-      color: "#991b1b",
-      borderRadius: "12px",
-      padding: "12px 14px",
-      marginTop: "12px",
-      lineHeight: 1.45,
-    };
-  }
-
-  if (status === "success") {
-    return {
-      background: "#ecfdf5",
-      border: "1px solid #a7f3d0",
-      color: "#065f46",
-      borderRadius: "12px",
-      padding: "12px 14px",
-      marginTop: "12px",
-      lineHeight: 1.45,
-    };
-  }
-
-  if (status === "loading") {
-    return {
-      background: "#eff6ff",
-      border: "1px solid #bfdbfe",
-      color: "#1d4ed8",
-      borderRadius: "12px",
-      padding: "12px 14px",
-      marginTop: "12px",
-      lineHeight: 1.45,
-    };
-  }
-
-  return {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    color: "#334155",
-    borderRadius: "12px",
-    padding: "12px 14px",
-    marginTop: "12px",
-    lineHeight: 1.45,
-  };
-}
-
-function buildReferenceId() {
-  return `setup-${Date.now()}`;
-}
-
-function readInquiryIdFromUrl() {
+function getReturnedInquiryId() {
   const params = new URLSearchParams(window.location.search);
   return params.get("inquiry-id") || params.get("inquiryId") || "";
 }
 
-function writeInquiryIdToUrl(inquiryId) {
-  if (!inquiryId) return;
+function cleanupReturnParams() {
   const url = new URL(window.location.href);
-  url.searchParams.set("inquiry-id", inquiryId);
-  window.history.replaceState({}, "", url.toString());
+  url.searchParams.delete("inquiry-id");
+  url.searchParams.delete("inquiryId");
+  url.searchParams.delete("kyc_return");
+  const qs = url.searchParams.toString();
+  const nextUrl = `${url.pathname}${qs ? `?${qs}` : ""}${url.hash || ""}`;
+  window.history.replaceState({}, "", nextUrl);
 }
 
 export default function Setup() {
-  const [senderName, setSenderName] = useState("");
-  const [senderPhone, setSenderPhone] = useState("");
-  const [senderPaymentMethod, setSenderPaymentMethod] = useState("Debit card");
+  const popupRef = useRef(null);
+  const pollRef = useRef(null);
+  const closeTimerRef = useRef(null);
 
-  const [receiverName, setReceiverName] = useState("");
-  const [receiverCountry, setReceiverCountry] = useState("Kenya");
-  const [selectedPayout, setSelectedPayout] = useState("mobile");
-
-  const [kycState, setKycState] = useState({
-    status: "idle",
-    message: "",
+  const [kyc, setKyc] = useState({
+    loading: false,
+    stage: "idle",
     inquiryId: "",
-    inquiryStatus: "",
+    inquiryStatus: "idle",
     verificationUrl: "",
-    stage: "",
-    raw: null,
+    message: "Start your live identity check to continue.",
+    error: "",
+    returnedFromPersona: false,
+    popupBlocked: false,
     lastCheckedAt: "",
-    isTerminal: false,
   });
 
-  const popupRef = useRef(null);
-  const pollTimerRef = useRef(null);
+  const isPopupCallback = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return Boolean(window.opener && window.opener !== window && getReturnedInquiryId());
+  }, []);
 
-  const selectedCountryCode = useMemo(() => {
-    return (
-      COUNTRIES.find((country) => country.label === receiverCountry)?.code || ""
-    );
-  }, [receiverCountry]);
-
-  const senderNameParts = useMemo(() => splitFullName(senderName), [senderName]);
-
-  function stopPolling() {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
     }
-  }
+  }, []);
 
-  function openPersonaWindow(url) {
-    if (!url) return;
+  const refreshStatus = useCallback(
+    async (incomingInquiryId) => {
+      const inquiryId = incomingInquiryId || kyc.inquiryId;
+      if (!inquiryId) return null;
 
-    if (popupRef.current && !popupRef.current.closed) {
-      popupRef.current.location = url;
-      popupRef.current.focus();
-      return;
-    }
-
-    const opened = window.open(
-      url,
-      "persona-kyc",
-      "popup=yes,width=520,height=860,noopener,noreferrer"
-    );
-
-    if (opened) {
-      popupRef.current = opened;
-      opened.focus();
-    }
-  }
-
-  function buildKycRequestBody() {
-    const fields = {};
-
-    if (senderNameParts.first) {
-      fields["name-first"] = senderNameParts.first;
-    }
-
-    if (senderNameParts.last) {
-      fields["name-last"] = senderNameParts.last;
-    }
-
-    if (selectedCountryCode && selectedCountryCode !== "OTHER") {
-      fields["selected-country-code"] = selectedCountryCode;
-    }
-
-    return {
-      transferMode: "production",
-      settlementProvider: "xrpl-mainnet",
-      provider: "xrpl-mainnet",
-      xrplNetwork: "mainnet",
-      referenceId: buildReferenceId(),
-      note: "KYC launch from Setup page",
-      metadata: {
-        source: "setup-page",
-        senderName: senderName || null,
-        senderPhone: senderPhone || null,
-        senderPaymentMethod,
-        receiverName: receiverName || null,
-        receiverCountry,
-        receiverCountryCode: selectedCountryCode || null,
-        payoutMethod: selectedPayout,
-      },
-      ...(Object.keys(fields).length > 0 ? { fields } : {}),
-    };
-  }
-
-  async function refreshKycStatus(inquiryId, options = {}) {
-    if (!inquiryId) return;
-    const quiet = Boolean(options.quiet);
-
-    if (!quiet) {
-      setKycState((prev) => ({
-        ...prev,
-        status: "loading",
-        message: prev.message || "Refreshing identity verification status...",
-      }));
-    }
-
-    try {
-      const response = await fetch(
-        `/api/kyc-status?inquiryId=${encodeURIComponent(inquiryId)}`,
-        { method: "GET" }
-      );
-
-      let payload = {};
       try {
-        payload = await response.json();
-      } catch {
-        payload = {};
-      }
-
-      const normalized = normalizeKycStatusResponse(payload);
-
-      if (!response.ok || !normalized.ok) {
-        setKycState((prev) => ({
+        setKyc((prev) => ({
           ...prev,
-          status: "error",
-          message: normalized.message || `Failed to refresh KYC status (${response.status}).`,
-          inquiryId: normalized.inquiryId || prev.inquiryId,
-          inquiryStatus: normalized.inquiryStatus || prev.inquiryStatus,
-          stage: normalized.stage || prev.stage,
-          raw: normalized.raw,
+          loading: true,
+          error: "",
+          stage: prev.returnedFromPersona
+            ? "refreshing-returned-inquiry"
+            : "refreshing-inquiry",
+          message: "Refreshing identity verification status...",
+        }));
+
+        const res = await fetch(
+          `/api/kyc-status?inquiryId=${encodeURIComponent(inquiryId)}`,
+          {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+            },
+          }
+        );
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok || !data?.ok) {
+          throw new Error(data?.error || "Failed to refresh KYC status.");
+        }
+
+        const inquiryStatus = data.inquiryStatus || "unknown";
+        const terminal = Boolean(data.isTerminal);
+
+        setKyc((prev) => ({
+          ...prev,
+          loading: false,
+          error: "",
+          stage: terminal ? "status-terminal" : "status-active",
+          inquiryId,
+          inquiryStatus,
+          message: messageForStatus(inquiryStatus),
           lastCheckedAt: new Date().toISOString(),
         }));
-        return;
+
+        if (terminal) {
+          stopPolling();
+        }
+
+        return data;
+      } catch (err) {
+        setKyc((prev) => ({
+          ...prev,
+          loading: false,
+          stage: "status-error",
+          error: err?.message || "Failed to refresh KYC status.",
+          message: "Could not refresh identity verification status.",
+          lastCheckedAt: new Date().toISOString(),
+        }));
+        return null;
       }
+    },
+    [kyc.inquiryId, stopPolling]
+  );
 
-      setKycState((prev) => ({
-        ...prev,
-        status: "success",
-        message: normalized.message,
-        inquiryId: normalized.inquiryId || prev.inquiryId,
-        inquiryStatus: normalized.inquiryStatus || prev.inquiryStatus,
-        stage: normalized.stage || prev.stage,
-        raw: normalized.raw,
-        lastCheckedAt: new Date().toISOString(),
-        isTerminal: normalized.isTerminal,
-      }));
+  const startPolling = useCallback(
+    (inquiryId) => {
+      if (!inquiryId) return;
+      stopPolling();
+      pollRef.current = window.setInterval(async () => {
+        await refreshStatus(inquiryId);
+      }, 5000);
+    },
+    [refreshStatus, stopPolling]
+  );
 
-      if (normalized.isTerminal) {
-        stopPolling();
-      }
-    } catch (error) {
-      setKycState((prev) => ({
-        ...prev,
-        status: "error",
-        message:
-          error?.message ||
-          "Could not refresh the KYC status. Try again in a few seconds.",
-        lastCheckedAt: new Date().toISOString(),
-      }));
-    }
-  }
-
-  function startPolling(inquiryId) {
+  const notifyParentAndPersistReturn = useCallback((inquiryId) => {
     if (!inquiryId) return;
-    stopPolling();
-
-    pollTimerRef.current = setInterval(() => {
-      refreshKycStatus(inquiryId, { quiet: true });
-    }, 5000);
-  }
-
-  async function startKycCheck() {
-    const popup = window.open(
-      "",
-      "persona-kyc",
-      "popup=yes,width=520,height=860,noopener,noreferrer"
-    );
-
-    if (popup) {
-      popup.document.write("<p style='font-family:sans-serif;padding:16px'>Preparing identity check...</p>");
-      popupRef.current = popup;
-    }
-
-    setKycState({
-      status: "loading",
-      message: "Preparing identity check...",
-      inquiryId: "",
-      inquiryStatus: "",
-      verificationUrl: "",
-      stage: "",
-      raw: null,
-      lastCheckedAt: "",
-      isTerminal: false,
-    });
 
     try {
-      const response = await fetch("/api/kyc-start", {
+      localStorage.setItem(
+        RETURN_STORAGE_KEY,
+        JSON.stringify({
+          inquiryId,
+          at: Date.now(),
+        })
+      );
+    } catch (_) {}
+
+    try {
+      if (window.opener && window.opener !== window) {
+        window.opener.postMessage(
+          {
+            type: "persona-return",
+            inquiryId,
+          },
+          window.location.origin
+        );
+      }
+    } catch (_) {}
+  }, []);
+
+  const openPersona = useCallback((verificationUrl) => {
+    if (!verificationUrl) return false;
+
+    const popup = window.open(
+      verificationUrl,
+      "personaKyc",
+      "popup=yes,width=540,height=760,resizable=yes,scrollbars=yes"
+    );
+
+    if (popup && !popup.closed) {
+      popupRef.current = popup;
+      try {
+        popup.focus();
+      } catch (_) {}
+      return true;
+    }
+
+    return false;
+  }, []);
+
+  const startKyc = useCallback(async () => {
+    try {
+      setKyc((prev) => ({
+        ...prev,
+        loading: true,
+        error: "",
+        popupBlocked: false,
+        stage: "creating-inquiry",
+        message: "Preparing identity check...",
+      }));
+
+      const referenceId = `setup-${Date.now()}`;
+
+      const res = await fetch("/api/kyc-start", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Accept: "application/json",
         },
-        body: JSON.stringify(buildKycRequestBody()),
+        body: JSON.stringify({ referenceId }),
       });
 
-      let payload = {};
-      try {
-        payload = await response.json();
-      } catch {
-        payload = {};
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "Failed to create KYC inquiry.");
       }
 
-      const normalized = normalizeKycStartResponse(payload);
+      const inquiryId = data.inquiryId || "";
+      const inquiryStatus = data.inquiryStatus || "created";
+      const verificationUrl =
+        data.verificationUrl || data.hostedUrl || data.shortVerificationUrl || "";
 
-      if (!response.ok || !normalized.ok) {
-        if (popup && !popup.closed) {
-          popup.close();
-        }
-
-        setKycState({
-          status: "error",
-          message: normalized.message || `KYC start failed (${response.status}).`,
-          inquiryId: normalized.inquiryId,
-          inquiryStatus: normalized.inquiryStatus,
-          verificationUrl: normalized.verificationUrl,
-          stage: normalized.stage,
-          raw: normalized.raw,
-          lastCheckedAt: new Date().toISOString(),
-          isTerminal: false,
-        });
-        return;
-      }
-
-      if (normalized.inquiryId) {
-        writeInquiryIdToUrl(normalized.inquiryId);
-      }
-
-      setKycState({
-        status: "success",
-        message: normalized.message,
-        inquiryId: normalized.inquiryId,
-        inquiryStatus: normalized.inquiryStatus,
-        verificationUrl: normalized.verificationUrl,
-        stage: normalized.stage,
-        raw: normalized.raw,
+      setKyc((prev) => ({
+        ...prev,
+        loading: false,
+        error: "",
+        stage: "persona-ready",
+        inquiryId,
+        inquiryStatus,
+        verificationUrl,
+        message: verificationUrl
+          ? "Identity check prepared. Opening Persona..."
+          : "Identity check prepared.",
         lastCheckedAt: new Date().toISOString(),
-        isTerminal: TERMINAL_STATUSES.has(String(normalized.inquiryStatus || "").toLowerCase()),
-      });
+      }));
 
-      if (normalized.inquiryId) {
-        startPolling(normalized.inquiryId);
+      if (inquiryId) {
+        startPolling(inquiryId);
       }
 
-      if (normalized.verificationUrl) {
-        if (popup && !popup.closed) {
-          popup.location = normalized.verificationUrl;
-          popup.focus();
-        } else {
-          openPersonaWindow(normalized.verificationUrl);
+      if (verificationUrl) {
+        const opened = openPersona(verificationUrl);
+
+        if (!opened) {
+          setKyc((prev) => ({
+            ...prev,
+            popupBlocked: true,
+            message:
+              "Popup was blocked. Redirecting to Persona in this tab instead.",
+          }));
+          window.location.assign(verificationUrl);
+          return;
         }
-      } else if (popup && !popup.closed) {
-        popup.close();
       }
-    } catch (error) {
-      if (popup && !popup.closed) {
-        popup.close();
-      }
-
-      setKycState({
-        status: "error",
-        message:
-          error?.message ||
-          "Could not reach the KYC service. Try again after deployment finishes.",
-        inquiryId: "",
-        inquiryStatus: "",
-        verificationUrl: "",
-        stage: "",
-        raw: null,
-        lastCheckedAt: new Date().toISOString(),
-        isTerminal: false,
-      });
+    } catch (err) {
+      setKyc((prev) => ({
+        ...prev,
+        loading: false,
+        stage: "create-error",
+        error: err?.message || "Failed to start KYC.",
+        message: "KYC provider is not ready yet.",
+      }));
     }
-  }
+  }, [openPersona, startPolling]);
 
   useEffect(() => {
-    const inquiryIdFromUrl = readInquiryIdFromUrl();
-    if (inquiryIdFromUrl) {
-      setKycState((prev) => ({
-        ...prev,
-        inquiryId: inquiryIdFromUrl,
-        status: "loading",
-        message: "Refreshing identity verification status...",
-      }));
-      refreshKycStatus(inquiryIdFromUrl);
-      startPolling(inquiryIdFromUrl);
-    }
-
     return () => {
       stopPolling();
+      if (closeTimerRef.current) {
+        window.clearTimeout(closeTimerRef.current);
+      }
     };
-  }, []);
+  }, [stopPolling]);
+
+  useEffect(() => {
+    const onMessage = async (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== "persona-return") return;
+
+      const inquiryId = String(event.data?.inquiryId || "").trim();
+      if (!inquiryId) return;
+
+      setKyc((prev) => ({
+        ...prev,
+        returnedFromPersona: true,
+        inquiryId,
+        stage: "received-popup-return",
+        message: "Refreshing identity verification status...",
+      }));
+
+      await refreshStatus(inquiryId);
+      startPolling(inquiryId);
+    };
+
+    const onStorage = async (event) => {
+      if (event.key !== RETURN_STORAGE_KEY || !event.newValue) return;
+
+      try {
+        const parsed = JSON.parse(event.newValue);
+        const inquiryId = String(parsed?.inquiryId || "").trim();
+        if (!inquiryId) return;
+
+        setKyc((prev) => ({
+          ...prev,
+          returnedFromPersona: true,
+          inquiryId,
+          stage: "received-storage-return",
+          message: "Refreshing identity verification status...",
+        }));
+
+        await refreshStatus(inquiryId);
+        startPolling(inquiryId);
+      } catch (_) {}
+    };
+
+    window.addEventListener("message", onMessage);
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener("message", onMessage);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [refreshStatus, startPolling]);
+
+  useEffect(() => {
+    const returnedInquiryId = getReturnedInquiryId();
+    if (!returnedInquiryId) return;
+
+    setKyc((prev) => ({
+      ...prev,
+      returnedFromPersona: true,
+      inquiryId: returnedInquiryId,
+      stage: "persona-return-detected",
+      message: "Refreshing identity verification status...",
+    }));
+
+    notifyParentAndPersistReturn(returnedInquiryId);
+
+    refreshStatus(returnedInquiryId).then(() => {
+      startPolling(returnedInquiryId);
+    });
+
+    cleanupReturnParams();
+
+    if (isPopupCallback) {
+      closeTimerRef.current = window.setTimeout(() => {
+        try {
+          window.close();
+        } catch (_) {}
+      }, 800);
+    }
+  }, [isPopupCallback, notifyParentAndPersistReturn, refreshStatus, startPolling]);
+
+  const canContinue = isSuccessfulStatus(kyc.inquiryStatus);
+  const terminal = isTerminalStatus(kyc.inquiryStatus);
 
   return (
-    <div className="setup-page">
-      <div className="max-w-5xl mx-auto space-y-8">
-        <div className="setup-hero">
-          <div className="setup-heading">
-            <p className="home-kicker">
-              <span aria-hidden="true">🛡️</span> Start here
-            </p>
-            <h1>Set up the sender and receiver one step at a time.</h1>
-            <p>
-              Use this guided form for fewer choices, bigger controls, and simple
-              wording that works for first-time users.
-            </p>
-          </div>
+    <div style={{ maxWidth: 820, margin: "0 auto", padding: 24 }}>
+      <h1 style={{ marginBottom: 8 }}>Setup</h1>
+      <p style={{ marginTop: 0, color: "#555" }}>
+        Complete your identity verification before sending money.
+      </p>
 
-          <div className="setup-helper-panel">
-            <div className="setup-helper-icon" aria-hidden="true">
-              📝
-            </div>
-            <h2>What you need</h2>
-            <div className="setup-needs-list">
-              {NEEDS.map((item) => (
-                <span key={item}>✓ {item}</span>
-              ))}
-            </div>
-          </div>
+      <div
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 20,
+          background: "#fff",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+        }}
+      >
+        <div style={{ marginBottom: 12 }}>
+          <strong>KYC status:</strong>{" "}
+          <span>{kyc.inquiryStatus || "idle"}</span>
         </div>
 
-        <div className="setup-stepper" aria-label="Setup steps">
-          {STEPS.map((step, index) => (
-            <div className="setup-step-pill" key={step}>
-              <strong>{index + 1}</strong>
-              <span>{step}</span>
-            </div>
-          ))}
+        <div style={{ marginBottom: 12 }}>
+          <strong>Message:</strong> <span>{kyc.message}</span>
         </div>
 
-        <div
-          className="setup-safety-alert"
-          style={{
-            border: "1px solid #fde68a",
-            background: "#fffbeb",
-            color: "#92400e",
-            borderRadius: "14px",
-            padding: "14px 16px",
-          }}
-        >
-          Live launch note: transfers should remain blocked until KYC is approved,
-          sanctions checks pass, and payment methods are correctly configured.
-        </div>
-
-        <div
-          className="kyc-start-card shadow-premium border-0"
-          style={{
-            background: "linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%)",
-            borderRadius: "18px",
-            padding: "24px",
-          }}
-        >
-          <div className="kyc-start-copy">
-            <div className="setup-helper-icon" aria-hidden="true">
-              🛡️
-            </div>
-
-            <div>
-              <h2>Identity check comes before real transfers</h2>
-              <p>
-                Start here to create a live Persona inquiry. Transfers should remain
-                blocked until KYC is approved by the backend.
-              </p>
-
-              {kycState.message ? (
-                <div style={getKycMessageStyle(kycState.status)}>
-                  <div>{kycState.message}</div>
-
-                  {kycState.inquiryId ? (
-                    <div style={{ marginTop: "6px", fontWeight: 700 }}>
-                      Reference: {kycState.inquiryId}
-                    </div>
-                  ) : null}
-
-                  {kycState.inquiryStatus ? (
-                    <div style={{ marginTop: "4px" }}>
-                      Status: {kycState.inquiryStatus}
-                    </div>
-                  ) : null}
-
-                  {kycState.stage ? (
-                    <div style={{ marginTop: "4px", opacity: 0.85 }}>
-                      Stage: {kycState.stage}
-                    </div>
-                  ) : null}
-
-                  {kycState.lastCheckedAt ? (
-                    <div style={{ marginTop: "4px", opacity: 0.75 }}>
-                      Last checked: {new Date(kycState.lastCheckedAt).toLocaleString()}
-                    </div>
-                  ) : null}
-
-                  {kycState.status === "success" &&
-                  kycState.verificationUrl &&
-                  !kycState.isTerminal ? (
-                    <div style={{ marginTop: "8px" }}>
-                      Persona is open in a separate tab. This page will refresh the inquiry
-                      status automatically.
-                    </div>
-                  ) : null}
-
-                  {kycState.isTerminal ? (
-                    <div style={{ marginTop: "8px", fontWeight: 600 }}>
-                      Verification reached a terminal state. You can continue with the next
-                      checks or transfer review flow.
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
+        {kyc.inquiryId ? (
+          <div style={{ marginBottom: 12 }}>
+            <strong>Inquiry ID:</strong> <span>{kyc.inquiryId}</span>
           </div>
+        ) : null}
 
+        {kyc.error ? (
           <div
-            className="kyc-actions"
             style={{
-              marginTop: "16px",
-              display: "flex",
-              gap: "12px",
-              flexWrap: "wrap",
-              alignItems: "center",
+              marginBottom: 12,
+              padding: 12,
+              borderRadius: 8,
+              background: "#fef2f2",
+              color: "#991b1b",
+              border: "1px solid #fecaca",
             }}
           >
-            <button
-              type="button"
-              onClick={startKycCheck}
-              disabled={kycState.status === "loading"}
-              className="setup-next-button"
+            {kyc.error}
+          </div>
+        ) : null}
+
+        {kyc.returnedFromPersona ? (
+          <div
+            style={{
+              marginBottom: 12,
+              padding: 12,
+              borderRadius: 8,
+              background: "#eff6ff",
+              color: "#1d4ed8",
+              border: "1px solid #bfdbfe",
+            }}
+          >
+            Persona returned to NexaRemit. This page will refresh the inquiry
+            status automatically.
+          </div>
+        ) : null}
+
+        {kyc.popupBlocked ? (
+          <div
+            style={{
+              marginBottom: 12,
+              padding: 12,
+              borderRadius: 8,
+              background: "#fff7ed",
+              color: "#9a3412",
+              border: "1px solid #fed7aa",
+            }}
+          >
+            Popup was blocked, so the verification flow was opened in this tab.
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
+          <button
+            type="button"
+            onClick={startKyc}
+            disabled={kyc.loading}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 8,
+              border: "1px solid #111827",
+              background: "#111827",
+              color: "#fff",
+              cursor: kyc.loading ? "not-allowed" : "pointer",
+            }}
+          >
+            {kyc.loading ? "Preparing identity check..." : "Start KYC Check"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => refreshStatus()}
+            disabled={!kyc.inquiryId || kyc.loading}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              background: "#fff",
+              color: "#111827",
+              cursor: !kyc.inquiryId || kyc.loading ? "not-allowed" : "pointer",
+            }}
+          >
+            Refresh status
+          </button>
+
+          {kyc.verificationUrl ? (
+            <a
+              href={kyc.verificationUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "10px 16px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                color: "#111827",
+                textDecoration: "none",
+                background: "#fff",
+              }}
             >
-              {kycState.status === "loading" ? "Preparing..." : "Start KYC Check"}
-            </button>
+              Open Persona
+            </a>
+          ) : null}
 
-            {kycState.verificationUrl ? (
-              <button
-                type="button"
-                onClick={() => openPersonaWindow(kycState.verificationUrl)}
-                className="kyc-link"
-              >
-                Open Persona
-              </button>
-            ) : null}
-
-            {kycState.inquiryId ? (
-              <button
-                type="button"
-                onClick={() => refreshKycStatus(kycState.inquiryId)}
-                className="kyc-link"
-              >
-                Refresh status
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="setup-grid">
-          <div className="setup-form-card shadow-premium border-0">
-            <div className="setup-title">
-              <span className="setup-card-number">1</span>
-              <span>Who is sending?</span>
-            </div>
-
-            <div className="easy-form">
-              <label>
-                <span>Sender full name</span>
-                <input
-                  value={senderName}
-                  onChange={(event) => setSenderName(event.target.value)}
-                  placeholder="Example: Maria Johnson"
-                />
-              </label>
-
-              <label>
-                <span>Sender phone number</span>
-                <input
-                  value={senderPhone}
-                  onChange={(event) => setSenderPhone(event.target.value)}
-                  placeholder="Example: +1 555 123 4567"
-                />
-              </label>
-
-              <label>
-                <span>How will the sender pay?</span>
-                <select
-                  value={senderPaymentMethod}
-                  onChange={(event) => setSenderPaymentMethod(event.target.value)}
-                >
-                  <option>Debit card</option>
-                  <option>Bank transfer</option>
-                  <option>Digital wallet</option>
-                </select>
-              </label>
-
-              <div className="simple-tip">
-                Card or bank details are added later through a secure payment partner.
-              </div>
-            </div>
-          </div>
-
-          <div className="setup-form-card shadow-premium border-0">
-            <div className="setup-title">
-              <span className="setup-card-number">2</span>
-              <span>Who receives?</span>
-            </div>
-
-            <div className="easy-form">
-              <label>
-                <span>Receiver full name</span>
-                <input
-                  value={receiverName}
-                  onChange={(event) => setReceiverName(event.target.value)}
-                  placeholder="Example: Daniel Mwangi"
-                />
-              </label>
-
-              <label>
-                <span>Receiver country</span>
-                <select
-                  value={receiverCountry}
-                  onChange={(event) => setReceiverCountry(event.target.value)}
-                >
-                  {COUNTRIES.map((country) => (
-                    <option key={country.label} value={country.label}>
-                      {country.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div>
-                <span className="field-label">How should they receive the money?</span>
-                <p className="field-helper">
-                  Choose the option your receiver will understand and can use easily.
-                </p>
-
-                <div className="payout-choice-grid">
-                  {PAYOUT_OPTIONS.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setSelectedPayout(option.id)}
-                      className={`payout-choice ${
-                        selectedPayout === option.id ? "is-selected" : ""
-                      }`}
-                    >
-                      <span aria-hidden="true" style={{ fontSize: 22 }}>
-                        {option.icon}
-                      </span>
-                      <strong>{option.label}</strong>
-                      <span>{option.helper}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="setup-review-card shadow-premium border-0">
-          <div className="p-6">
-            <div className="setup-review-copy">
-              <span className="setup-card-number">3</span>
-              <div>
-                <h2>Review before sending</h2>
-                <p>
-                  Next, choose an amount and see the fee, exchange rate, delivery
-                  time, and receiver amount before confirming.
-                </p>
-              </div>
-            </div>
-
-            <Link to="/SendMoney" className="setup-next-button">
+          {canContinue ? (
+            <a
+              href="/SendMoney"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "10px 16px",
+                borderRadius: 8,
+                border: "1px solid #16a34a",
+                color: "#fff",
+                textDecoration: "none",
+                background: "#16a34a",
+              }}
+            >
               Continue to Transfer
-            </Link>
-          </div>
+            </a>
+          ) : null}
         </div>
+
+        {terminal && !canContinue ? (
+          <div
+            style={{
+              marginTop: 16,
+              padding: 12,
+              borderRadius: 8,
+              background: "#fff7ed",
+              color: "#9a3412",
+              border: "1px solid #fed7aa",
+            }}
+          >
+            Verification ended with status <strong>{kyc.inquiryStatus}</strong>.
+            Review the inquiry result before allowing transfer continuation.
+          </div>
+        ) : null}
+
+        {kyc.lastCheckedAt ? (
+          <div style={{ marginTop: 16, fontSize: 12, color: "#6b7280" }}>
+            Last checked: {new Date(kyc.lastCheckedAt).toLocaleString()}
+          </div>
+        ) : null}
       </div>
     </div>
   );
