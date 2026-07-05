@@ -1,8 +1,12 @@
-import React from "react";
+﻿import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { integrationChecklist, providerConfig } from "@/integrations/provider-config";
+import { providerConfig } from "@/integrations/provider-config";
+const integrationChecklist = Array.isArray(providerConfig?.integrationChecklist)
+  ? providerConfig.integrationChecklist
+  : [];
+
 import { AlertTriangle, BadgeCheck, CircleDashed, FileCheck, KeyRound, Network, PlugZap, ShieldCheck } from "lucide-react";
 
 const serverEnvVars = [
@@ -222,3 +226,4 @@ export default function Integrations() {
     </div>
   );
 }
+
