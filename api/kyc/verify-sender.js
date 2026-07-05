@@ -1,10 +1,10 @@
-// api/kyc/verify-sender.js
+﻿// api/kyc/verify-sender.js
 
 import {
   createProxyRouteHandler,
   getBackendRuntimeConfig,
   ensurePlainObject,
-} from "../_lib/providerGateway.js";
+} from "../../src/server/_lib/providerGateway.js";
 
 const config = getBackendRuntimeConfig();
 
@@ -15,3 +15,4 @@ export default createProxyRouteHandler({
     ensurePlainObject(body.sender, "sender");
   },
 });
+

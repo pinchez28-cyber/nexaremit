@@ -1,13 +1,13 @@
-// api/settlement/prepare.js
+﻿// api/settlement/prepare.js
 
-import { sendJson, sendError, assertMethod, getJsonBody } from "../_lib/http.js";
+import { sendJson, sendError, assertMethod, getJsonBody } from "../../src/server/_lib/http.js";
 import {
   assertProductionRequestContext,
   ensureNonEmptyString,
   ensureAtLeastOneDefined,
   withProductionResponseContext,
-} from "../_lib/providerGateway.js";
-import { prepareSettlement } from "../_lib/xrplSettlement.js";
+} from "../../src/server/_lib/providerGateway.js";
+import { prepareSettlement } from "../../src/server/_lib/xrplSettlement.js";
 
 export default async function handler(req, res) {
   try {
@@ -42,3 +42,4 @@ export default async function handler(req, res) {
     return sendError(res, error);
   }
 }
+

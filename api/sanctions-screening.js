@@ -1,5 +1,5 @@
-import { getRequestUser, readJson, requireMethod, sendJson } from "./_lib/http.js";
-import { screenSanctionsSubject } from "./_lib/sanctionsRecords.js";
+﻿import { getRequestUser, readJson, requireMethod, sendJson } from "../src/server/_lib/http.js";
+import { screenSanctionsSubject } from "../src/server/_lib/sanctionsRecords.js";
 
 export default async function handler(request, response) {
   if (!requireMethod(request, response, ["POST"])) return;
@@ -23,3 +23,4 @@ export default async function handler(request, response) {
     });
   }
 }
+

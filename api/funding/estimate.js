@@ -1,11 +1,11 @@
-// api/funding/estimate.js
+﻿// api/funding/estimate.js
 
 import {
   createProxyRouteHandler,
   getBackendRuntimeConfig,
   ensurePositiveNumberLike,
   ensureNonEmptyString,
-} from "../_lib/providerGateway.js";
+} from "../../src/server/_lib/providerGateway.js";
 
 const config = getBackendRuntimeConfig();
 
@@ -17,3 +17,4 @@ export default createProxyRouteHandler({
     ensureNonEmptyString(body.sourceCurrency, "sourceCurrency");
   },
 });
+

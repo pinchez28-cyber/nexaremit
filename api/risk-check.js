@@ -1,6 +1,6 @@
-import { getRequestUser, readJson, requireMethod, sendJson } from "./_lib/http.js";
-import { providerRegistry } from "./_lib/providerRegistry.js";
-import { assessTransferRisk } from "./_lib/riskRecords.js";
+﻿import { getRequestUser, readJson, requireMethod, sendJson } from "../src/server/_lib/http.js";
+import { providerRegistry } from "../src/server/_lib/providerRegistry.js";
+import { assessTransferRisk } from "../src/server/_lib/riskRecords.js";
 
 export default async function handler(request, response) {
   if (!requireMethod(request, response, ["POST"])) return;
@@ -33,3 +33,4 @@ export default async function handler(request, response) {
     });
   }
 }
+

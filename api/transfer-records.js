@@ -1,5 +1,5 @@
-import { getRequestUser, readJson, requireMethod, sendJson } from "./_lib/http.js";
-import { getTransferRecordById, listTransferRecords, saveTransferRecord } from "./_lib/transferRecords.js";
+﻿import { getRequestUser, readJson, requireMethod, sendJson } from "../src/server/_lib/http.js";
+import { getTransferRecordById, listTransferRecords, saveTransferRecord } from "../src/server/_lib/transferRecords.js";
 
 export default async function handler(request, response) {
   if (!requireMethod(request, response, ["GET", "POST"])) return;
@@ -28,3 +28,4 @@ export default async function handler(request, response) {
     });
   }
 }
+

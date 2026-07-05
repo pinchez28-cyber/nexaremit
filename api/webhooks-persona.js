@@ -1,7 +1,7 @@
-import crypto from "node:crypto";
-import { requireMethod, sendJson } from "./_lib/http.js";
-import { upsertKycRecord } from "./_lib/kycRecords.js";
-import { parsePersonaEvent } from "./_lib/persona.js";
+﻿import crypto from "node:crypto";
+import { requireMethod, sendJson } from "../src/server/_lib/http.js";
+import { upsertKycRecord } from "../src/server/_lib/kycRecords.js";
+import { parsePersonaEvent } from "../src/server/_lib/persona.js";
 
 function verifyPersonaSignature(rawBody, signature) {
   if (!process.env.PERSONA_WEBHOOK_SECRET) return false;
@@ -86,3 +86,4 @@ export default async function handler(request, response) {
     status: saved.record.status
   });
 }
+
