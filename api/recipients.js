@@ -1,25 +1,482 @@
-import { requireMethod, sendJson } from "./_lib/http.js";
+// api/recipients.js
 
-const recipients = [
-  { id: "recipient_1", name: "Amara Okafor", country: "Nigeria", method: "Bank transfer", receiveCurrency: "NGN", corridor: "US-NG", limit: 2500, risk: "Verified" },
-  { id: "recipient_2", name: "Daniel Mwangi", country: "Kenya", method: "Mobile money", receiveCurrency: "KES", corridor: "US-KE", limit: 1500, risk: "Verified" },
-  { id: "recipient_3", name: "Efua Mensah", country: "Ghana", method: "Wallet payout", receiveCurrency: "GHS", corridor: "US-GH", limit: 1800, risk: "Review required" },
-  { id: "recipient_4", name: "Priya Sharma", country: "India", method: "Bank transfer", receiveCurrency: "INR", corridor: "GB-IN", limit: 3000, risk: "Verified" },
-  { id: "recipient_5", name: "Maria Santos", country: "Philippines", method: "Mobile wallet", receiveCurrency: "PHP", corridor: "US-PH", limit: 2000, risk: "Verified" },
-  { id: "recipient_6", name: "Carlos Rivera", country: "Mexico", method: "Bank transfer", receiveCurrency: "MXN", corridor: "US-MX", limit: 2500, risk: "Verified" },
-  { id: "recipient_7", name: "Ana Oliveira", country: "Brazil", method: "PIX payout", receiveCurrency: "BRL", corridor: "EU-BR", limit: 2200, risk: "Verified" },
-  { id: "recipient_8", name: "Ahmed Khan", country: "Pakistan", method: "Bank transfer", receiveCurrency: "PKR", corridor: "GB-PK", limit: 1800, risk: "Review required" },
-  { id: "recipient_9", name: "Nusrat Rahman", country: "Bangladesh", method: "Mobile money", receiveCurrency: "BDT", corridor: "SG-BD", limit: 1600, risk: "Verified" },
-  { id: "recipient_10", name: "Thabo Mbeki", country: "South Africa", method: "Bank transfer", receiveCurrency: "ZAR", corridor: "EU-ZA", limit: 2400, risk: "Verified" },
-  { id: "recipient_11", name: "Mariam Hassan", country: "Egypt", method: "Cash pickup", receiveCurrency: "EGP", corridor: "AE-EG", limit: 1700, risk: "Review required" },
-  { id: "recipient_12", name: "Youssef El Amrani", country: "Morocco", method: "Bank transfer", receiveCurrency: "MAD", corridor: "EU-MA", limit: 1900, risk: "Verified" }
-];
+import {
+  normalizeTransferMode,
+  requireEnum,
+  requireUrl,
+} from "../src/lib/env.js";
 
-export default async function handler(request, response) {
-  if (!requireMethod(request, response, ["GET"])) return;
+const runtimeConfig = Object.freeze({
+  transferMode: normalizeTransferMode(process.env, "TRANSFER_MODE"),
+  settlementProvider: requireEnum(process.env, "SETTLEMENT_PROVIDER", [
+    "xrpl-mainnet",
+  ]),
+  xrplNetwork: requireEnum(process.env, "XRPL_NETWORK", ["mainnet"]),
+  recipientsApiUrl: requireUrl(process.env, "RECIPIENTS_API_URL", ["https:"]),
+});
 
-  sendJson(response, 200, {
-    mode: process.env.TRANSFER_MODE || "sandbox",
-    recipients
+function createHttpError(statusCode, message, details) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  if (details !== undefined) {
+    error.details = details;
+  }
+  return error;
+}
+
+function sendJson(res, statusCode, payload) {
+  return res.status(statusCode).json(payload);
+}
+
+function sendError(res, error) {
+  const statusCode =
+    Number.isInteger(error?.statusCode) && error.statusCode >= 400
+      ? error.statusCode
+      : 500;
+
+  return res.status(statusCode).json({
+    error:
+      typeof error?.message === "string" && error.message.trim()
+        ? error.message
+        : "Internal Server Error",
+    ...(error?.details !== undefined ? { details: error.details } : {}),
   });
+}
+
+function assertMethod(req, res, allowedMethods) {
+  if (!allowedMethods.includes(req.method)) {
+    res.setHeader("Allow", allowedMethods.join(", "));
+    throw createHttpError(
+      405,
+      `Method ${req.method} not allowed. Expected one of: ${allowedMethods.join(", ")}`
+    );
+  }
+}
+
+function ensurePlainObject(value, fieldName) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw createHttpError(400, `${fieldName} must be an object`);
+  }
+  return value;
+}
+
+function ensureNonEmptyString(value, fieldName) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw createHttpError(400, `${fieldName} is required`);
+  }
+  return value.trim();
+}
+
+function ensureOptionalNonEmptyString(value, fieldName) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  return ensureNonEmptyString(value, fieldName);
+}
+
+function normalizeOptionalBoolean(value, fieldName) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  if (typeof value === "boolean") return value;
+
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+
+  throw createHttpError(400, `${fieldName} must be a boolean`);
+}
+
+function normalizeOptionalInteger(value, fieldName) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw createHttpError(400, `${fieldName} must be a non-negative integer`);
+  }
+
+  return parsed;
+}
+
+function getJsonBody(req) {
+  let body;
+
+  try {
+    body = req.body;
+  } catch (error) {
+    throw createHttpError(400, "Malformed JSON request body", error?.message);
+  }
+
+  if (body == null) {
+    throw createHttpError(400, "Request body is required");
+  }
+
+  if (typeof body === "string") {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      throw createHttpError(400, "Request body must be valid JSON");
+    }
+  }
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw createHttpError(400, "Request body must be a JSON object");
+  }
+
+  return body;
+}
+
+function containsForbiddenValue(value) {
+  const normalized = String(value).trim().toLowerCase();
+
+  return (
+    normalized.includes("testnet") ||
+    normalized.includes("sandbox") ||
+    normalized.includes("mock") ||
+    normalized.includes("pk_test_")
+  );
+}
+
+function assertNoForbiddenStringsInValue(value, fieldPath) {
+  if (value === undefined || value === null) return;
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    if (containsForbiddenValue(value)) {
+      throw createHttpError(
+        400,
+        `${fieldPath} contains a non-production value: ${value}`
+      );
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) =>
+      assertNoForbiddenStringsInValue(item, `${fieldPath}[${index}]`)
+    );
+    return;
+  }
+
+  if (typeof value === "object") {
+    for (const [key, nestedValue] of Object.entries(value)) {
+      assertNoForbiddenStringsInValue(nestedValue, `${fieldPath}.${key}`);
+    }
+  }
+}
+
+function assertProductionContextFromQuery(query) {
+  const transferMode = query.transferMode ?? query.mode;
+  const settlementProvider = query.settlementProvider ?? query.provider;
+  const xrplNetwork = query.xrplNetwork;
+  const publishableKey = query.stripePublishableKey ?? query.publishableKey;
+
+  [transferMode, settlementProvider, xrplNetwork, publishableKey].forEach(
+    (value, index) => {
+      const names = ["transferMode", "settlementProvider", "xrplNetwork", "publishableKey"];
+      if (value !== undefined) {
+        assertNoForbiddenStringsInValue(value, names[index]);
+      }
+    }
+  );
+
+  if (transferMode !== undefined) {
+    const raw = ensureNonEmptyString(transferMode, "transferMode").toLowerCase();
+    const normalized = raw === "live" ? "production" : raw;
+
+    if (normalized !== runtimeConfig.transferMode) {
+      throw createHttpError(
+        400,
+        `Invalid transferMode. Expected "${runtimeConfig.transferMode}", received "${transferMode}"`
+      );
+    }
+  }
+
+  if (settlementProvider !== undefined) {
+    const normalized = ensureNonEmptyString(
+      settlementProvider,
+      "settlementProvider"
+    );
+    if (normalized !== runtimeConfig.settlementProvider) {
+      throw createHttpError(
+        400,
+        `Invalid settlementProvider. Expected "${runtimeConfig.settlementProvider}", received "${settlementProvider}"`
+      );
+    }
+  }
+
+  if (xrplNetwork !== undefined) {
+    const normalized = ensureNonEmptyString(xrplNetwork, "xrplNetwork");
+    if (normalized !== runtimeConfig.xrplNetwork) {
+      throw createHttpError(
+        400,
+        `Invalid xrplNetwork. Expected "${runtimeConfig.xrplNetwork}", received "${xrplNetwork}"`
+      );
+    }
+  }
+}
+
+function assertProductionContextFromBody(body) {
+  assertNoForbiddenStringsInValue(body, "body");
+
+  if (body.transferMode !== undefined) {
+    const raw = ensureNonEmptyString(body.transferMode, "transferMode").toLowerCase();
+    const normalized = raw === "live" ? "production" : raw;
+
+    if (normalized !== runtimeConfig.transferMode) {
+      throw createHttpError(
+        400,
+        `Invalid transferMode. Expected "${runtimeConfig.transferMode}", received "${body.transferMode}"`
+      );
+    }
+  }
+
+  if (body.settlementProvider !== undefined) {
+    if (body.settlementProvider !== runtimeConfig.settlementProvider) {
+      throw createHttpError(
+        400,
+        `Invalid settlementProvider. Expected "${runtimeConfig.settlementProvider}", received "${body.settlementProvider}"`
+      );
+    }
+  }
+
+  if (body.provider !== undefined) {
+    if (body.provider !== runtimeConfig.settlementProvider) {
+      throw createHttpError(
+        400,
+        `Invalid provider. Expected "${runtimeConfig.settlementProvider}", received "${body.provider}"`
+      );
+    }
+  }
+
+  if (body.xrplNetwork !== undefined) {
+    if (body.xrplNetwork !== runtimeConfig.xrplNetwork) {
+      throw createHttpError(
+        400,
+        `Invalid xrplNetwork. Expected "${runtimeConfig.xrplNetwork}", received "${body.xrplNetwork}"`
+      );
+    }
+  }
+}
+
+function buildRecipientsUrl(query = {}) {
+  const url = new URL(runtimeConfig.recipientsApiUrl);
+
+  const id = ensureOptionalNonEmptyString(query.id, "id");
+  if (id) {
+    url.pathname = `${url.pathname.replace(/\/$/, "")}/${encodeURIComponent(id)}`;
+  }
+
+  const filters = {
+    userId: ensureOptionalNonEmptyString(query.userId, "userId"),
+    country: ensureOptionalNonEmptyString(query.country, "country"),
+    currency: ensureOptionalNonEmptyString(query.currency, "currency"),
+    status: ensureOptionalNonEmptyString(query.status, "status"),
+    corridor: ensureOptionalNonEmptyString(query.corridor, "corridor"),
+    search: ensureOptionalNonEmptyString(query.search, "search"),
+    limit: normalizeOptionalInteger(query.limit, "limit"),
+    offset: normalizeOptionalInteger(query.offset, "offset"),
+    archived: normalizeOptionalBoolean(query.archived, "archived"),
+  };
+
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined) {
+      url.searchParams.set(key, String(value));
+    }
+  }
+
+  url.searchParams.set("transferMode", runtimeConfig.transferMode);
+  url.searchParams.set("settlementProvider", runtimeConfig.settlementProvider);
+  url.searchParams.set("xrplNetwork", runtimeConfig.xrplNetwork);
+
+  return url.toString();
+}
+
+function normalizeMetadata(value) {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  ensurePlainObject(value, "metadata");
+
+  const normalized = {};
+
+  for (const [key, rawValue] of Object.entries(value)) {
+    const normalizedKey = ensureNonEmptyString(key, "metadata key");
+    if (rawValue === undefined || rawValue === null) continue;
+    normalized[normalizedKey] =
+      typeof rawValue === "string" ? rawValue : String(rawValue);
+  }
+
+  return normalized;
+}
+
+function buildCreateOrUpdatePayload(body) {
+  const recipient = ensurePlainObject(body.recipient ?? body, "recipient");
+
+  const payload = {
+    transferMode: runtimeConfig.transferMode,
+    settlementProvider: runtimeConfig.settlementProvider,
+    provider: runtimeConfig.settlementProvider,
+    xrplNetwork: runtimeConfig.xrplNetwork,
+    recipient: {
+      id: ensureOptionalNonEmptyString(recipient.id, "recipient.id"),
+      userId: ensureOptionalNonEmptyString(recipient.userId, "recipient.userId"),
+      name: ensureNonEmptyString(recipient.name, "recipient.name"),
+      country: ensureNonEmptyString(recipient.country, "recipient.country"),
+      receiveCurrency: ensureOptionalNonEmptyString(
+        recipient.receiveCurrency,
+        "recipient.receiveCurrency"
+      ),
+      destinationAddress: ensureOptionalNonEmptyString(
+        recipient.destinationAddress,
+        "recipient.destinationAddress"
+      ),
+      bankAccountNumber: ensureOptionalNonEmptyString(
+        recipient.bankAccountNumber,
+        "recipient.bankAccountNumber"
+      ),
+      bankCode: ensureOptionalNonEmptyString(
+        recipient.bankCode,
+        "recipient.bankCode"
+      ),
+      mobileMoneyNumber: ensureOptionalNonEmptyString(
+        recipient.mobileMoneyNumber,
+        "recipient.mobileMoneyNumber"
+      ),
+      payoutMethod: ensureOptionalNonEmptyString(
+        recipient.payoutMethod,
+        "recipient.payoutMethod"
+      ),
+      relationship: ensureOptionalNonEmptyString(
+        recipient.relationship,
+        "recipient.relationship"
+      ),
+      status: ensureOptionalNonEmptyString(recipient.status, "recipient.status"),
+      metadata: normalizeMetadata(recipient.metadata),
+    },
+    metadata: normalizeMetadata(body.metadata),
+  };
+
+  return payload;
+}
+
+async function parseUpstreamResponse(response) {
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    try {
+      return await response.json();
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    return await response.text();
+  } catch {
+    return null;
+  }
+}
+
+function extractUpstreamErrorMessage(body, fallbackMessage) {
+  if (!body) return fallbackMessage;
+
+  if (typeof body === "string" && body.trim()) {
+    return body.trim();
+  }
+
+  if (typeof body === "object") {
+    const message =
+      body.message || body.error || body.details || body.title || body.code;
+
+    if (typeof message === "string" && message.trim()) {
+      return message.trim();
+    }
+  }
+
+  return fallbackMessage;
+}
+
+function withRuntimeContext(result) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return {
+      result,
+      transferMode: runtimeConfig.transferMode,
+      settlementProvider: runtimeConfig.settlementProvider,
+      provider: runtimeConfig.settlementProvider,
+      xrplNetwork: runtimeConfig.xrplNetwork,
+    };
+  }
+
+  return {
+    ...result,
+    transferMode: runtimeConfig.transferMode,
+    settlementProvider: runtimeConfig.settlementProvider,
+    provider: runtimeConfig.settlementProvider,
+    xrplNetwork: runtimeConfig.xrplNetwork,
+  };
+}
+
+export default async function handler(req, res) {
+  try {
+    assertMethod(req, res, ["GET", "POST"]);
+
+    if (req.method === "GET") {
+      assertProductionContextFromQuery(req.query || {});
+
+      const response = await fetch(buildRecipientsUrl(req.query || {}), {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      const upstreamBody = await parseUpstreamResponse(response);
+
+      if (!response.ok) {
+        throw createHttpError(
+          response.status,
+          extractUpstreamErrorMessage(
+            upstreamBody,
+            `[recipients] Upstream GET failed: ${response.status} ${response.statusText}`
+          ),
+          upstreamBody
+        );
+      }
+
+      return sendJson(res, 200, withRuntimeContext(upstreamBody));
+    }
+
+    const body = getJsonBody(req);
+    assertProductionContextFromBody(body);
+
+    const response = await fetch(buildRecipientsUrl(req.query || {}), {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildCreateOrUpdatePayload(body)),
+    });
+
+    const upstreamBody = await parseUpstreamResponse(response);
+
+    if (!response.ok) {
+      throw createHttpError(
+        response.status,
+        extractUpstreamErrorMessage(
+          upstreamBody,
+          `[recipients] Upstream POST failed: ${response.status} ${response.statusText}`
+        ),
+        upstreamBody
+      );
+    }
+
+    return sendJson(res, 200, withRuntimeContext(upstreamBody));
+  } catch (error) {
+    return sendError(res, error);
+  }
 }

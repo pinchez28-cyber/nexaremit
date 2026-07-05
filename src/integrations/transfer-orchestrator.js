@@ -1,60 +1,502 @@
-import {
-  mockExchangeProvider,
-  mockFundingProvider,
-  mockKycProvider,
-  mockPayoutProvider,
-  mockSanctionsProvider,
-  mockSettlementProvider
-} from "./mock-providers";
-import { providerConfig } from "./provider-config";
+// src/integrations/transfer-orchestrator.js
 
-export function createTransferOrchestrator() {
-  return {
-    async createQuote({ amount = 0, currency = "USD", recipient, purpose }) {
-      const funding = await mockFundingProvider.estimateFunding({ amount, currency });
-      const fx = await mockExchangeProvider.quote({ amount, currency, recipient });
-      const payout = await mockPayoutProvider.estimatePayout({ recipient });
-      const settlement = await mockSettlementProvider.prepareSettlement({ amount, currency, recipient });
-      const sanctions = await mockSanctionsProvider.screenTransfer({ recipient, amount, currency, purpose });
-      const kyc = await mockKycProvider.verifySender();
-      const numericAmount = Number(amount || 0);
-      const transferLimit = recipient?.limit || 2500;
+import providerConfig from "./provider-config.js";
 
-      return {
-        mode: providerConfig.mode,
-        amount: numericAmount,
-        currency,
-        purpose,
-        recipient,
-        fee: funding.fee,
-        total: numericAmount + funding.fee,
-        rate: fx.rate,
-        receiveCurrency: fx.receiveCurrency,
-        receivedAmount: fx.receivedAmount,
-        transferLimit,
-        isOverLimit: numericAmount > transferLimit,
-        expiresInSeconds: fx.expiresInSeconds,
-        deliveryEstimate: payout.deliveryEstimate,
-        providers: {
-          kyc,
-          sanctions,
-          funding,
-          exchange: fx,
-          settlement,
-          payout
-        }
-      };
-    },
+const PRODUCTION_MODE = "production";
+const PRODUCTION_SETTLEMENT_PROVIDER = "xrpl-mainnet";
+const PRODUCTION_XRPL_NETWORK = "mainnet";
 
-    async prepareTransfer(transferData) {
-      const quote = await this.createQuote(transferData);
-      return {
-        ...quote,
-        transferReference: `NX-${Date.now().toString().slice(-8)}`,
-        nextRequiredAction: quote.providers.sanctions.status === "manual_review" ? "Compliance review" : "Payment authorization"
-      };
+const PRODUCTION_ENDPOINTS = Object.freeze({
+  verifySender: "/api/kyc/verify-sender",
+  screenTransfer: "/api/sanctions/screen-transfer",
+  estimateFunding: "/api/funding/estimate",
+  quoteExchange: "/api/exchange/quote",
+  estimatePayout: "/api/payout/estimate",
+  prepareSettlement: "/api/settlement/prepare",
+  submitSignedSettlement: "/api/settlement/submit-signed",
+  submitAndWaitSignedSettlement: "/api/settlement/submit-and-wait",
+});
+
+function assertProductionProviderConfig(config) {
+  if (!config || typeof config !== "object") {
+    throw new Error("[transfer-orchestrator] providerConfig is required");
+  }
+
+  if (config.mode !== PRODUCTION_MODE || config.transferMode !== PRODUCTION_MODE) {
+    throw new Error(
+      `[transfer-orchestrator] Invalid transfer mode. Expected "${PRODUCTION_MODE}", received mode="${config.mode}" transferMode="${config.transferMode}"`
+    );
+  }
+
+  if (config.settlementProvider !== PRODUCTION_SETTLEMENT_PROVIDER) {
+    throw new Error(
+      `[transfer-orchestrator] Invalid settlement provider. Expected "${PRODUCTION_SETTLEMENT_PROVIDER}", received "${config.settlementProvider}"`
+    );
+  }
+
+  if (config.provider !== PRODUCTION_SETTLEMENT_PROVIDER) {
+    throw new Error(
+      `[transfer-orchestrator] Invalid provider alias. Expected "${PRODUCTION_SETTLEMENT_PROVIDER}", received "${config.provider}"`
+    );
+  }
+
+  if (config.xrplNetwork !== PRODUCTION_XRPL_NETWORK || config.network !== PRODUCTION_XRPL_NETWORK) {
+    throw new Error(
+      `[transfer-orchestrator] Invalid XRPL network. Expected "${PRODUCTION_XRPL_NETWORK}", received xrplNetwork="${config.xrplNetwork}" network="${config.network}"`
+    );
+  }
+
+  if (typeof config.apiBaseUrl !== "string" || !config.apiBaseUrl.trim()) {
+    throw new Error("[transfer-orchestrator] providerConfig.apiBaseUrl is required");
+  }
+
+  if (!/^https:\/\//i.test(config.apiBaseUrl)) {
+    throw new Error(
+      `[transfer-orchestrator] providerConfig.apiBaseUrl must be HTTPS. Received: ${config.apiBaseUrl}`
+    );
+  }
+
+  return Object.freeze({ ...config });
+}
+
+const runtimeConfig = assertProductionProviderConfig(providerConfig);
+
+function trimString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function ensureObject(value, fieldName) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`[transfer-orchestrator] ${fieldName} must be an object`);
+  }
+  return value;
+}
+
+function ensureNonEmptyString(value, fieldName) {
+  const normalized = trimString(value);
+  if (!normalized) {
+    throw new Error(`[transfer-orchestrator] ${fieldName} is required`);
+  }
+  return normalized;
+}
+
+function ensurePositiveNumberLike(value, fieldName) {
+  if (value == null || value === "") {
+    throw new Error(`[transfer-orchestrator] ${fieldName} is required`);
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    throw new Error(
+      `[transfer-orchestrator] ${fieldName} must be a positive number. Received: ${value}`
+    );
+  }
+
+  return value;
+}
+
+function joinUrl(baseUrl, path) {
+  const base = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${suffix}`;
+}
+
+function getEndpointUrl(endpointPath) {
+  return joinUrl(runtimeConfig.apiBaseUrl, endpointPath);
+}
+
+async function parseResponseBody(response) {
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    try {
+      return await response.json();
+    } catch {
+      return null;
     }
+  }
+
+  try {
+    return await response.text();
+  } catch {
+    return null;
+  }
+}
+
+function extractErrorMessage(responseBody, fallbackMessage) {
+  if (!responseBody) return fallbackMessage;
+
+  if (typeof responseBody === "string" && responseBody.trim()) {
+    return responseBody.trim();
+  }
+
+  if (typeof responseBody === "object") {
+    const message =
+      responseBody.message ||
+      responseBody.error ||
+      responseBody.details ||
+      responseBody.title;
+
+    if (typeof message === "string" && message.trim()) {
+      return message.trim();
+    }
+  }
+
+  return fallbackMessage;
+}
+
+async function requestJson(endpointPath, { method = "POST", body, headers = {}, signal } = {}) {
+  const url = getEndpointUrl(endpointPath);
+
+  const response = await fetch(url, {
+    method,
+    signal,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...headers,
+    },
+    body: body == null ? undefined : JSON.stringify(body),
+  });
+
+  const responseBody = await parseResponseBody(response);
+
+  if (!response.ok) {
+    const message = extractErrorMessage(
+      responseBody,
+      `[transfer-orchestrator] Request failed: ${response.status} ${response.statusText}`
+    );
+
+    const error = new Error(message);
+    error.status = response.status;
+    error.statusText = response.statusText;
+    error.url = url;
+    error.responseBody = responseBody;
+    throw error;
+  }
+
+  return responseBody;
+}
+
+function withRuntimeContext(payload = {}) {
+  return {
+    ...payload,
+    provider: runtimeConfig.settlementProvider,
+    settlementProvider: runtimeConfig.settlementProvider,
+    xrplNetwork: runtimeConfig.xrplNetwork,
+    transferMode: runtimeConfig.transferMode,
   };
 }
 
-export const transferOrchestrator = createTransferOrchestrator();
+function pickFirstDefined(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function normalizeSettlementInput(input, quoteResult, payoutResult) {
+  const sourceAddress = ensureNonEmptyString(
+    input.sourceAddress ?? input.walletAddress ?? input.account,
+    "sourceAddress"
+  );
+
+  const destinationAddress = ensureNonEmptyString(
+    input.destinationAddress ?? input.settlementAddress ?? input.recipientAddress,
+    "destinationAddress"
+  );
+
+  const amountDrops = pickFirstDefined(
+    input.amountDrops,
+    quoteResult?.settlementAmountDrops,
+    quoteResult?.destinationAmountDrops,
+    quoteResult?.amountDrops,
+    payoutResult?.settlementAmountDrops,
+    payoutResult?.amountDrops
+  );
+
+  const amountXrp = pickFirstDefined(
+    input.amountXrp,
+    quoteResult?.settlementAmountXrp,
+    quoteResult?.destinationAmountXrp,
+    quoteResult?.amountXrp,
+    payoutResult?.settlementAmountXrp,
+    payoutResult?.amountXrp
+  );
+
+  if (amountDrops == null && amountXrp == null) {
+    throw new Error(
+      "[transfer-orchestrator] Settlement amount is required. Provide amountDrops or amountXrp, or return one from the quote/payout API."
+    );
+  }
+
+  return {
+    sourceAddress,
+    destinationAddress,
+    amountDrops,
+    amountXrp,
+    memo: input.memo,
+    destinationTag: input.destinationTag,
+    feeDrops: input.feeDrops,
+    lastLedgerSequence: input.lastLedgerSequence,
+  };
+}
+
+export function getTransferEnvironment() {
+  return Object.freeze({
+    mode: runtimeConfig.mode,
+    transferMode: runtimeConfig.transferMode,
+    apiBaseUrl: runtimeConfig.apiBaseUrl,
+    settlementProvider: runtimeConfig.settlementProvider,
+    provider: runtimeConfig.provider,
+    xrplNetwork: runtimeConfig.xrplNetwork,
+    network: runtimeConfig.network,
+    stripePublishableKey: runtimeConfig.stripePublishableKey,
+  });
+}
+
+export async function verifySender(input, options = {}) {
+  ensureObject(input, "verifySender input");
+
+  const payload = withRuntimeContext({
+    ...input,
+    sender: ensureObject(input.sender, "sender"),
+  });
+
+  return requestJson(PRODUCTION_ENDPOINTS.verifySender, {
+    body: payload,
+    signal: options.signal,
+  });
+}
+
+export async function screenTransfer(input, options = {}) {
+  ensureObject(input, "screenTransfer input");
+
+  const payload = withRuntimeContext({
+    ...input,
+    sender: ensureObject(input.sender, "sender"),
+    recipient: ensureObject(input.recipient, "recipient"),
+  });
+
+  return requestJson(PRODUCTION_ENDPOINTS.screenTransfer, {
+    body: payload,
+    signal: options.signal,
+  });
+}
+
+export async function estimateFunding(input, options = {}) {
+  ensureObject(input, "estimateFunding input");
+  ensurePositiveNumberLike(input.sourceAmount, "sourceAmount");
+  ensureNonEmptyString(input.sourceCurrency, "sourceCurrency");
+
+  const payload = withRuntimeContext(input);
+
+  return requestJson(PRODUCTION_ENDPOINTS.estimateFunding, {
+    body: payload,
+    signal: options.signal,
+  });
+}
+
+export async function quote(input, options = {}) {
+  ensureObject(input, "quote input");
+  ensurePositiveNumberLike(input.sourceAmount, "sourceAmount");
+  ensureNonEmptyString(input.sourceCurrency, "sourceCurrency");
+  ensureNonEmptyString(input.destinationCurrency, "destinationCurrency");
+
+  const payload = withRuntimeContext(input);
+
+  return requestJson(PRODUCTION_ENDPOINTS.quoteExchange, {
+    body: payload,
+    signal: options.signal,
+  });
+}
+
+export const quoteExchange = quote;
+
+export async function estimatePayout(input, options = {}) {
+  ensureObject(input, "estimatePayout input");
+  ensurePositiveNumberLike(input.sourceAmount, "sourceAmount");
+  ensureNonEmptyString(input.sourceCurrency, "sourceCurrency");
+  ensureNonEmptyString(input.destinationCurrency, "destinationCurrency");
+
+  const payload = withRuntimeContext(input);
+
+  return requestJson(PRODUCTION_ENDPOINTS.estimatePayout, {
+    body: payload,
+    signal: options.signal,
+  });
+}
+
+export async function prepareSettlement(input, options = {}) {
+  ensureObject(input, "prepareSettlement input");
+
+  const payload = withRuntimeContext({
+    ...input,
+    sourceAddress: ensureNonEmptyString(input.sourceAddress, "sourceAddress"),
+    destinationAddress: ensureNonEmptyString(input.destinationAddress, "destinationAddress"),
+  });
+
+  return requestJson(PRODUCTION_ENDPOINTS.prepareSettlement, {
+    body: payload,
+    signal: options.signal,
+  });
+}
+
+export async function submitSignedSettlement(input, options = {}) {
+  ensureObject(input, "submitSignedSettlement input");
+
+  const payload = withRuntimeContext({
+    ...input,
+    signedTransaction: ensureNonEmptyString(
+      input.signedTransaction,
+      "signedTransaction"
+    ),
+  });
+
+  return requestJson(PRODUCTION_ENDPOINTS.submitSignedSettlement, {
+    body: payload,
+    signal: options.signal,
+  });
+}
+
+export async function submitAndWaitSignedSettlement(input, options = {}) {
+  ensureObject(input, "submitAndWaitSignedSettlement input");
+
+  const payload = withRuntimeContext({
+    ...input,
+    signedTransaction: ensureNonEmptyString(
+      input.signedTransaction,
+      "signedTransaction"
+    ),
+  });
+
+  return requestJson(PRODUCTION_ENDPOINTS.submitAndWaitSignedSettlement, {
+    body: payload,
+    signal: options.signal,
+  });
+}
+
+export async function buildTransferPlan(input, options = {}) {
+  ensureObject(input, "buildTransferPlan input");
+  ensureObject(input.sender, "sender");
+  ensureObject(input.recipient, "recipient");
+  ensurePositiveNumberLike(input.sourceAmount, "sourceAmount");
+  ensureNonEmptyString(input.sourceCurrency, "sourceCurrency");
+  ensureNonEmptyString(input.destinationCurrency, "destinationCurrency");
+
+  const verification = await verifySender(
+    {
+      sender: input.sender,
+      corridor: input.corridor,
+      metadata: input.metadata,
+    },
+    options
+  );
+
+  const sanctions = await screenTransfer(
+    {
+      sender: input.sender,
+      recipient: input.recipient,
+      sourceAmount: input.sourceAmount,
+      sourceCurrency: input.sourceCurrency,
+      destinationCurrency: input.destinationCurrency,
+      corridor: input.corridor,
+      payoutMethod: input.payoutMethod,
+      metadata: input.metadata,
+    },
+    options
+  );
+
+  const funding = await estimateFunding(
+    {
+      sender: input.sender,
+      sourceAmount: input.sourceAmount,
+      sourceCurrency: input.sourceCurrency,
+      paymentMethod: input.paymentMethod,
+      corridor: input.corridor,
+      metadata: input.metadata,
+    },
+    options
+  );
+
+  const exchangeQuote = await quote(
+    {
+      sender: input.sender,
+      recipient: input.recipient,
+      sourceAmount: input.sourceAmount,
+      sourceCurrency: input.sourceCurrency,
+      destinationCurrency: input.destinationCurrency,
+      corridor: input.corridor,
+      payoutMethod: input.payoutMethod,
+      metadata: input.metadata,
+    },
+    options
+  );
+
+  const payout = await estimatePayout(
+    {
+      sender: input.sender,
+      recipient: input.recipient,
+      sourceAmount: input.sourceAmount,
+      sourceCurrency: input.sourceCurrency,
+      destinationCurrency: input.destinationCurrency,
+      payoutMethod: input.payoutMethod,
+      quoteId:
+        input.quoteId ||
+        exchangeQuote?.quoteId ||
+        exchangeQuote?.id,
+      corridor: input.corridor,
+      metadata: input.metadata,
+    },
+    options
+  );
+
+  const settlementInput = normalizeSettlementInput(input, exchangeQuote, payout);
+
+  const settlement = await prepareSettlement(
+    {
+      ...settlementInput,
+      transferId:
+        input.transferId ||
+        exchangeQuote?.transferId ||
+        payout?.transferId,
+      quoteId:
+        input.quoteId ||
+        exchangeQuote?.quoteId ||
+        exchangeQuote?.id,
+      sender: input.sender,
+      recipient: input.recipient,
+      metadata: input.metadata,
+    },
+    options
+  );
+
+  return Object.freeze({
+    environment: getTransferEnvironment(),
+    verification,
+    sanctions,
+    funding,
+    quote: exchangeQuote,
+    payout,
+    settlement,
+  });
+}
+
+const transferOrchestrator = Object.freeze({
+  name: "production-transfer-orchestrator",
+  environment: getTransferEnvironment,
+  verifySender,
+  screenTransfer,
+  estimateFunding,
+  quote,
+  quoteExchange,
+  estimatePayout,
+  prepareSettlement,
+  submitSignedSettlement,
+  submitAndWaitSignedSettlement,
+  buildTransferPlan,
+});
+
+export default transferOrchestrator;
