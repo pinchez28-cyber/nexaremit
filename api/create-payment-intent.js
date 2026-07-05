@@ -1,311 +1,264 @@
 ﻿import Stripe from "stripe";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 
-function toStr(v) {
-  return typeof v === "string" ? v.trim() : "";
+if (!stripeSecretKey) {
+  throw new Error("Missing STRIPE_SECRET_KEY");
 }
 
-function toInt(v) {
-  const n = Number(v);
-  return Number.isInteger(n) ? n : NaN;
+const stripe = new Stripe(stripeSecretKey);
+
+function sendJson(res, status, payload) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json");
+  res.end(JSON.stringify(payload));
 }
 
-function envInt(name, fallbackValue) {
+function getEnvInt(name, fallback) {
   const raw = process.env[name];
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? Math.trunc(parsed) : fallbackValue;
+  if (raw === undefined || raw === null || raw === "") return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
 }
 
-function safeCurrency(value, fallback = "usd") {
-  const c = toStr(value).toLowerCase();
-  return /^[a-z]{3}$/.test(c) ? c : fallback;
+function normalizeCurrency(value, fallback = "usd") {
+  const v = String(value || fallback).trim().toLowerCase();
+  return v || fallback;
 }
 
-function isLikelyTestKey(value) {
-  return /^sk_test_/i.test(toStr(value));
-}
-
-function isLikelyLiveKey(value) {
-  return /^sk_live_/i.test(toStr(value));
-}
-
-function normalizeMetadata(obj) {
-  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return {};
-  const out = {};
-  for (const [k, v] of Object.entries(obj)) {
-    const key = toStr(k).slice(0, 40);
-    if (!key) continue;
-    out[key] = toStr(v).slice(0, 500);
+async function getJsonBody(req) {
+  if (req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)) {
+    return req.body;
   }
-  return out;
+
+  if (typeof req.body === "string") {
+    try {
+      return JSON.parse(req.body);
+    } catch {
+      throw new Error("Invalid JSON request body");
+    }
+  }
+
+  if (Buffer.isBuffer(req.body)) {
+    try {
+      return JSON.parse(req.body.toString("utf8"));
+    } catch {
+      throw new Error("Invalid JSON request body");
+    }
+  }
+
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  if (chunks.length === 0) return {};
+
+  const raw = Buffer.concat(chunks).toString("utf8");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error("Invalid JSON request body");
+  }
 }
 
-function roundUpCents(n) {
-  return Math.ceil(Number(n));
-}
+function buildQuote(sendAmountCents) {
+  const platformFixedFeeCents = getEnvInt("NEXA_PLATFORM_FIXED_FEE_CENTS", 99);
+  const platformPercentBps = getEnvInt("NEXA_PLATFORM_PERCENT_BPS", 0);
 
-function calculateQuote(sendAmountCents) {
-  const platformFlatCents = envInt("FEE_PLATFORM_FLAT_CENTS", 99);
-  const platformPercentBps = envInt("FEE_PLATFORM_PERCENT_BPS", 0);
+  const fxMarkupBps = getEnvInt("NEXA_FX_MARKUP_BPS", 40);
+  const payoutFixedFeeCents = getEnvInt("NEXA_PAYOUT_FIXED_FEE_CENTS", 0);
+  const payoutPercentBps = getEnvInt("NEXA_PAYOUT_PERCENT_BPS", 0);
 
-  const fxMarkupBps = envInt("FEE_FX_MARKUP_BPS", 30);
+  const complianceBufferCents = getEnvInt("NEXA_COMPLIANCE_BUFFER_CENTS", 0);
 
-  const payoutFixedCents = envInt("FEE_PAYOUT_FIXED_CENTS", 0);
-  const payoutPercentBps = envInt("FEE_PAYOUT_PERCENT_BPS", 0);
+  const stripePercentBps = getEnvInt("STRIPE_FEE_PERCENT_BPS", 290);
+  const stripeFixedFeeCents = getEnvInt("STRIPE_FEE_FIXED_CENTS", 30);
 
-  const complianceBufferCents = envInt("FEE_COMPLIANCE_BUFFER_CENTS", 0);
-
-  const stripePercentBps = envInt("STRIPE_PERCENT_BPS", 290);
-  const stripeFixedCents = envInt("STRIPE_FIXED_CENTS", 30);
-
-  const platformPercentFeeCents = roundUpCents(
-    (sendAmountCents * platformPercentBps) / 10000
-  );
-
-  const platformFeeCents = platformFlatCents + platformPercentFeeCents;
-
-  const fxMarkupCents = roundUpCents(
-    (sendAmountCents * fxMarkupBps) / 10000
-  );
-
-  const payoutPercentFeeCents = roundUpCents(
-    (sendAmountCents * payoutPercentBps) / 10000
-  );
-
-  const payoutCostCents = payoutFixedCents + payoutPercentFeeCents;
+  const platformPercentFeeCents = [Math]::Ceiling(sendAmountCents * (platformPercentBps / 10000));
+  const fxMarkupCents = [Math]::Ceiling(sendAmountCents * (fxMarkupBps / 10000));
+  const payoutPercentFeeCents = [Math]::Ceiling(sendAmountCents * (payoutPercentBps / 10000));
 
   const baseCostCents =
     sendAmountCents +
-    platformFeeCents +
+    platformFixedFeeCents +
+    platformPercentFeeCents +
     fxMarkupCents +
-    payoutCostCents +
+    payoutFixedFeeCents +
+    payoutPercentFeeCents +
     complianceBufferCents;
 
   const stripeRate = stripePercentBps / 10000;
-
-  const totalChargeCents = roundUpCents(
-    (baseCostCents + stripeFixedCents) / (1 - stripeRate)
-  );
-
+  const totalChargeCents = [Math]::Ceiling((baseCostCents + stripeFixedFeeCents) / (1 - stripeRate));
   const stripeFeeEstimateCents = totalChargeCents - baseCostCents;
 
   return {
     sendAmountCents,
-    platformFeeCents,
+    platformFeeCents: platformFixedFeeCents + platformPercentFeeCents,
     fxMarkupCents,
-    payoutCostCents,
+    payoutCostCents: payoutFixedFeeCents + payoutPercentFeeCents,
     complianceBufferCents,
     stripeFeeEstimateCents,
     totalChargeCents,
-
-    config: {
-      platformFlatCents,
-      platformPercentBps,
-      fxMarkupBps,
-      payoutFixedCents,
-      payoutPercentBps,
-      complianceBufferCents,
-      stripePercentBps,
-      stripeFixedCents,
-    },
   };
 }
 
 export default async function handler(req, res) {
-  const send = (status, body) => {
-    res.setHeader("Cache-Control", "no-store");
-    return res.status(status).json(body);
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return sendJson(res, 405, {
+      ok: false,
+      route: "create-payment-intent",
+      error: "Method not allowed. Use POST.",
+    });
+  }
+
+  let body;
+  try {
+    body = await getJsonBody(req);
+  } catch (err) {
+    return sendJson(res, 400, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "body-parse",
+      error: err.message || "Invalid JSON request body",
+    });
+  }
+
+  const amount = Number(body.amount);
+  const currency = normalizeCurrency(body.currency, "usd");
+
+  const referenceId =
+    String(body.referenceId || "").trim() ||
+    `nexa-${Date.now()}`;
+
+  const transferId =
+    String(body.transferId || "").trim() ||
+    referenceId;
+
+  const recipientStripeAccountId =
+    body.recipientStripeAccountId ||
+    body.recipient?.stripeAccountId ||
+    "";
+
+  const explicitRecipientAmountMinor =
+    body.recipientAmountMinor ??
+    body.recipientGetsCents ??
+    body.quote?.recipientGetsCents;
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return sendJson(res, 400, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "validate-input",
+      error: "Missing or invalid amount",
+    });
+  }
+
+  if (!currency) {
+    return sendJson(res, 400, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "validate-input",
+      error: "Missing or invalid currency",
+    });
+  }
+
+  if (
+    !recipientStripeAccountId ||
+    !String(recipientStripeAccountId).startsWith("acct_")
+  ) {
+    return sendJson(res, 400, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "validate-input",
+      error: "Missing or invalid recipientStripeAccountId",
+    });
+  }
+
+  const quote = buildQuote(amount);
+
+  const recipientAmountMinor = Number(
+    explicitRecipientAmountMinor ?? quote.sendAmountCents
+  );
+
+  if (!Number.isFinite(recipientAmountMinor) || recipientAmountMinor <= 0) {
+    return sendJson(res, 400, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "validate-input",
+      error: "Missing or invalid recipientAmountMinor",
+    });
+  }
+
+  const recipientCurrency = normalizeCurrency(
+    body.recipientCurrency || body.quote?.recipientCurrency || currency,
+    currency
+  );
+
+  const transferGroup = `remit_${transferId}`;
+
+  const createParams = {
+    amount: quote.totalChargeCents,
+    currency,
+    payment_method_types: ["card"],
+    confirmation_method: "automatic",
+    capture_method: "automatic",
+    description: `NexaRemit transfer ${referenceId}`,
+    metadata: {
+      referenceId: String(referenceId),
+      transferId: String(transferId),
+      recipientStripeAccountId: String(recipientStripeAccountId),
+      recipientAmountMinor: String(recipientAmountMinor),
+      recipientCurrency: String(recipientCurrency).toLowerCase(),
+      transferGroup,
+    },
   };
 
+  if (body.senderId) createParams.metadata.senderId = String(body.senderId);
+  if (body.recipientId) createParams.metadata.recipientId = String(body.recipientId);
+
   try {
-    if (req.method !== "POST") {
-      return send(405, {
-        ok: false,
-        route: "create-payment-intent",
-        stage: "method-not-allowed",
-        error: "Method not allowed. Use POST.",
-      });
-    }
-
-    const TRANSFER_MODE = toStr(process.env.TRANSFER_MODE);
-    const STRIPE_SECRET_KEY = toStr(process.env.STRIPE_SECRET_KEY);
-    const STRIPE_ACCOUNT_ID = toStr(process.env.STRIPE_ACCOUNT_ID);
-    const DEFAULT_CURRENCY = safeCurrency(process.env.STRIPE_CURRENCY || "usd");
-
-    if (TRANSFER_MODE && TRANSFER_MODE !== "production") {
-      return send(500, {
-        ok: false,
-        route: "create-payment-intent",
-        stage: "env-validation",
-        error: "TRANSFER_MODE must be 'production' for this endpoint.",
-        value: TRANSFER_MODE,
-      });
-    }
-
-    if (!STRIPE_SECRET_KEY) {
-      return send(500, {
-        ok: false,
-        route: "create-payment-intent",
-        stage: "env-validation",
-        error: "Missing STRIPE_SECRET_KEY.",
-      });
-    }
-
-    if (isLikelyTestKey(STRIPE_SECRET_KEY)) {
-      return send(500, {
-        ok: false,
-        route: "create-payment-intent",
-        stage: "env-validation",
-        error: "Unsafe value in environment variable: STRIPE_SECRET_KEY is a test key.",
-      });
-    }
-
-    if (!isLikelyLiveKey(STRIPE_SECRET_KEY)) {
-      return send(500, {
-        ok: false,
-        route: "create-payment-intent",
-        stage: "env-validation",
-        error: "STRIPE_SECRET_KEY does not appear to be a live secret key.",
-      });
-    }
-
-    let body = {};
-    try {
-      body =
-        typeof req.body === "string"
-          ? JSON.parse(req.body || "{}")
-          : req.body || {};
-    } catch (err) {
-      return send(400, {
-        ok: false,
-        route: "create-payment-intent",
-        stage: "body-parse",
-        error: "Invalid JSON request body.",
-        details: toStr(err?.message),
-      });
-    }
-
-    const sendAmountCents = toInt(
-      body.sendAmountCents ?? body.transferAmountCents ?? body.amount
-    );
-
-    const currency = safeCurrency(body.currency, DEFAULT_CURRENCY);
-    const customerId = toStr(body.customerId);
-    const receiptEmail = toStr(body.receiptEmail || body.email);
-    const description = toStr(body.description) || "NexaRemit transfer funding";
-    const referenceId =
-      toStr(body.referenceId) ||
-      `nexaremit-pi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-    if (!Number.isInteger(sendAmountCents) || sendAmountCents <= 0) {
-      return send(400, {
-        ok: false,
-        route: "create-payment-intent",
-        stage: "input-validation",
-        error:
-          "amount/sendAmountCents must be a positive integer in the smallest currency unit.",
-      });
-    }
-
-    if (currency === "usd" && sendAmountCents < 50) {
-      return send(400, {
-        ok: false,
-        route: "create-payment-intent",
-        stage: "input-validation",
-        error: "Transfer amount must be at least 50 cents for usd.",
-      });
-    }
-
-    const quote = calculateQuote(sendAmountCents);
-
-    const metadata = normalizeMetadata({
-      referenceId,
-      transferId: body.transferId,
-      senderId: body.senderId,
-      recipientId: body.recipientId,
-      corridor: body.corridor,
-      payoutCountry: body.payoutCountry,
-
-      sendAmountCents: quote.sendAmountCents,
-      platformFeeCents: quote.platformFeeCents,
-      fxMarkupCents: quote.fxMarkupCents,
-      payoutCostCents: quote.payoutCostCents,
-      complianceBufferCents: quote.complianceBufferCents,
-      stripeFeeEstimateCents: quote.stripeFeeEstimateCents,
-      totalChargeCents: quote.totalChargeCents,
-
-      source: "nexaremit-sendmoney",
-      ...(body.metadata || {}),
+    const paymentIntent = await stripe.paymentIntents.create(createParams, {
+      idempotencyKey: `pi-${referenceId}`,
     });
 
-    const createParams = {
-      amount: quote.totalChargeCents,
-      currency,
-      payment_method_types: ["card"],
-      confirmation_method: "automatic",
-      capture_method: "automatic",
-      description,
-      metadata,
-    };
-
-    if (customerId) {
-      createParams.customer = customerId;
-    }
-
-    if (receiptEmail) {
-      createParams.receipt_email = receiptEmail;
-    }
-
-    const requestOptions = STRIPE_ACCOUNT_ID
-      ? { stripeAccount: STRIPE_ACCOUNT_ID }
-      : undefined;
-
-    const intent = await stripe.paymentIntents.create(
-      createParams,
-      requestOptions
-    );
-
-    return send(200, {
+    return sendJson(res, 200, {
       ok: true,
       route: "create-payment-intent",
       stage: "payment-intent-created",
       provider: "stripe",
-      mode: "production",
-      paymentIntentId: intent.id,
-      clientSecret: intent.client_secret,
-      amount: intent.amount,
-      currency: intent.currency,
-      status: intent.status,
-      paymentMethodTypes: intent.payment_method_types || ["card"],
-      livemode: Boolean(intent.livemode),
+      mode: paymentIntent.livemode ? "production" : "test",
+      paymentIntentId: paymentIntent.id,
+      clientSecret: paymentIntent.client_secret,
+      amount: paymentIntent.amount,
+      currency: paymentIntent.currency,
+      status: paymentIntent.status,
+      paymentMethodTypes: paymentIntent.payment_method_types,
+      livemode: paymentIntent.livemode,
       referenceId,
-
+      transferId,
+      recipientStripeAccountId,
+      metadata: {
+        referenceId,
+        transferId,
+        recipientStripeAccountId,
+        recipientAmountMinor,
+        recipientCurrency,
+        transferGroup,
+      },
       quote: {
-        sendAmountCents: quote.sendAmountCents,
-        platformFeeCents: quote.platformFeeCents,
-        fxMarkupCents: quote.fxMarkupCents,
-        payoutCostCents: quote.payoutCostCents,
-        complianceBufferCents: quote.complianceBufferCents,
-        stripeFeeEstimateCents: quote.stripeFeeEstimateCents,
-        totalChargeCents: quote.totalChargeCents,
-        recipientGetsCents: Number.isInteger(body.recipientGetsCents)
-          ? body.recipientGetsCents
-          : null,
+        ...quote,
+        recipientGetsCents: recipientAmountMinor,
       },
     });
   } catch (err) {
-    const type = toStr(err?.type);
-    const code = toStr(err?.code);
-    const message = toStr(err?.message) || "Unexpected Stripe error.";
-
-    return send(500, {
+    return sendJson(res, 500, {
       ok: false,
       route: "create-payment-intent",
-      stage: "top-level-catch",
-      error: message,
-      stripeType: type || "",
-      stripeCode: code || "",
+      stage: "stripe-create",
+      error: err?.type || "StripeError",
+      message: err?.message || "Failed to create PaymentIntent",
     });
   }
 }
