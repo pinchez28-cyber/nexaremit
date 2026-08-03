@@ -1,4 +1,4 @@
-﻿import Stripe from "stripe";
+import Stripe from "stripe";
 
 export const config = {
   api: {
@@ -6,18 +6,15 @@ export const config = {
   },
 };
 
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-if (!stripeSecretKey) {
-  throw new Error("Missing STRIPE_SECRET_KEY");
+// Lazy init so missing env vars produce a clean response instead of crashing
+// the function at module load.
+let stripeSingleton = null;
+function getStripe() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) return null;
+  if (!stripeSingleton) stripeSingleton = new Stripe(key);
+  return stripeSingleton;
 }
-
-if (!stripeWebhookSecret) {
-  throw new Error("Missing STRIPE_WEBHOOK_SECRET");
-}
-
-const stripe = new Stripe(stripeSecretKey);
 
 async function readRawBody(req) {
   if (Buffer.isBuffer(req.body)) return req.body;
@@ -36,7 +33,7 @@ function json(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-async function handlePaymentIntentSucceeded(paymentIntent) {
+async function handlePaymentIntentSucceeded(stripe, paymentIntent) {
   const currentIntent = await stripe.paymentIntents.retrieve(paymentIntent.id);
 
   if (currentIntent.metadata?.recipientTransferId) {
@@ -48,6 +45,18 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
 
   const md = currentIntent.metadata || {};
 
+  const recipientStripeAccountId =
+    md.recipientStripeAccountId ||
+    md.recipient_stripe_account_id;
+
+  // Funding-only charge: the primary NexaRemit flow funds the platform here and
+  // settles the payout over XRPL, so there is no Stripe Connect recipient. Do
+  // NOT throw (that would 500 and make Stripe retry the webhook forever) — just
+  // acknowledge the funding event.
+  if (!recipientStripeAccountId) {
+    return { fundingOnly: true, paymentIntentId: currentIntent.id };
+  }
+
   const referenceId =
     md.referenceId ||
     md.reference_id ||
@@ -57,10 +66,6 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
     md.transferId ||
     md.transfer_id ||
     referenceId;
-
-  const recipientStripeAccountId =
-    md.recipientStripeAccountId ||
-    md.recipient_stripe_account_id;
 
   const recipientAmountMinor = Number(
     md.recipientAmountMinor ||
@@ -83,10 +88,6 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
     typeof currentIntent.latest_charge === "string"
       ? currentIntent.latest_charge
       : currentIntent.latest_charge?.id;
-
-  if (!recipientStripeAccountId) {
-    throw new Error(`Missing recipientStripeAccountId metadata on PaymentIntent ${currentIntent.id}`);
-  }
 
   if (!Number.isFinite(recipientAmountMinor) || recipientAmountMinor <= 0) {
     throw new Error(`Invalid recipientAmountMinor metadata on PaymentIntent ${currentIntent.id}`);
@@ -146,6 +147,15 @@ export default async function handler(req, res) {
     return json(res, 405, { ok: false, error: "Method not allowed. Use POST." });
   }
 
+  const stripe = getStripe();
+  const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!stripe || !stripeWebhookSecret) {
+    return json(res, 500, {
+      ok: false,
+      error: "Server is missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET",
+    });
+  }
+
   const signature = req.headers["stripe-signature"];
   if (!signature) {
     return json(res, 400, { ok: false, error: "Missing Stripe-Signature header" });
@@ -169,9 +179,9 @@ export default async function handler(req, res) {
     switch (event.type) {
       case "payment_intent.succeeded": {
         const paymentIntent = event.data.object;
-        const result = await handlePaymentIntentSucceeded(paymentIntent);
+        const result = await handlePaymentIntentSucceeded(stripe, paymentIntent);
 
-        console.log("Recipient transfer processed", {
+        console.log("Payment intent succeeded", {
           paymentIntentId: paymentIntent.id,
           result,
         });

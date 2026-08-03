@@ -1,12 +1,17 @@
-﻿import Stripe from "stripe";
+import Stripe from "stripe";
 
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-
-if (!stripeSecretKey) {
-  throw new Error("Missing STRIPE_SECRET_KEY");
+// Stripe is created lazily inside the handler so a missing/invalid key returns
+// a clean JSON error instead of crashing the function at module load
+// (which surfaces on Vercel as an opaque FUNCTION_INVOCATION_FAILED).
+let stripeSingleton = null;
+function getStripe() {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+  if (!stripeSecretKey) return null;
+  if (!stripeSingleton) {
+    stripeSingleton = new Stripe(stripeSecretKey);
+  }
+  return stripeSingleton;
 }
-
-const stripe = new Stripe(stripeSecretKey);
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -75,9 +80,9 @@ function buildQuote(sendAmountCents) {
   const stripePercentBps = getEnvInt("STRIPE_FEE_PERCENT_BPS", 290);
   const stripeFixedFeeCents = getEnvInt("STRIPE_FEE_FIXED_CENTS", 30);
 
-  const platformPercentFeeCents = [Math]::Ceiling(sendAmountCents * (platformPercentBps / 10000));
-  const fxMarkupCents = [Math]::Ceiling(sendAmountCents * (fxMarkupBps / 10000));
-  const payoutPercentFeeCents = [Math]::Ceiling(sendAmountCents * (payoutPercentBps / 10000));
+  const platformPercentFeeCents = Math.ceil(sendAmountCents * (platformPercentBps / 10000));
+  const fxMarkupCents = Math.ceil(sendAmountCents * (fxMarkupBps / 10000));
+  const payoutPercentFeeCents = Math.ceil(sendAmountCents * (payoutPercentBps / 10000));
 
   const baseCostCents =
     sendAmountCents +
@@ -89,7 +94,7 @@ function buildQuote(sendAmountCents) {
     complianceBufferCents;
 
   const stripeRate = stripePercentBps / 10000;
-  const totalChargeCents = [Math]::Ceiling((baseCostCents + stripeFixedFeeCents) / (1 - stripeRate));
+  const totalChargeCents = Math.ceil((baseCostCents + stripeFixedFeeCents) / (1 - stripeRate));
   const stripeFeeEstimateCents = totalChargeCents - baseCostCents;
 
   return {
@@ -113,6 +118,16 @@ export default async function handler(req, res) {
     });
   }
 
+  const stripe = getStripe();
+  if (!stripe) {
+    return sendJson(res, 500, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "config",
+      error: "Server is missing STRIPE_SECRET_KEY",
+    });
+  }
+
   let body;
   try {
     body = await getJsonBody(req);
@@ -125,7 +140,9 @@ export default async function handler(req, res) {
     });
   }
 
-  const amount = Number(body.amount);
+  // Amount is expected in minor units (cents). Coerce to a whole integer so
+  // Stripe never receives a fractional amount.
+  const amount = Math.round(Number(body.amount));
   const currency = normalizeCurrency(body.currency, "usd");
 
   const referenceId =
@@ -136,10 +153,13 @@ export default async function handler(req, res) {
     String(body.transferId || "").trim() ||
     referenceId;
 
-  const recipientStripeAccountId =
-    body.recipientStripeAccountId ||
-    body.recipient?.stripeAccountId ||
-    "";
+  // Optional: only relevant when the recipient is a Stripe Connect account and
+  // this platform performs a separate Connect transfer (see stripe-webhook.js).
+  // The primary NexaRemit flow funds the platform here and settles the payout
+  // over XRPL, so this field is NOT required for a funding charge.
+  const rawRecipientStripeAccountId = String(
+    body.recipientStripeAccountId || body.recipient?.stripeAccountId || ""
+  ).trim();
 
   const explicitRecipientAmountMinor =
     body.recipientAmountMinor ??
@@ -155,6 +175,18 @@ export default async function handler(req, res) {
     });
   }
 
+  // Optional AML/sanity ceiling. Only enforced when NEXA_MAX_SEND_CENTS is set,
+  // so it can never block a legitimate transfer unless deliberately configured.
+  const maxSendCents = getEnvInt("NEXA_MAX_SEND_CENTS", 0);
+  if (maxSendCents > 0 && amount > maxSendCents) {
+    return sendJson(res, 400, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "validate-input",
+      error: `Amount exceeds the configured maximum of ${maxSendCents} minor units`,
+    });
+  }
+
   if (!currency) {
     return sendJson(res, 400, {
       ok: false,
@@ -164,15 +196,17 @@ export default async function handler(req, res) {
     });
   }
 
+  // If a recipient Stripe account IS provided, it must be well-formed.
+  const hasRecipientConnectAccount = Boolean(rawRecipientStripeAccountId);
   if (
-    !recipientStripeAccountId ||
-    !String(recipientStripeAccountId).startsWith("acct_")
+    hasRecipientConnectAccount &&
+    !rawRecipientStripeAccountId.startsWith("acct_")
   ) {
     return sendJson(res, 400, {
       ok: false,
       route: "create-payment-intent",
       stage: "validate-input",
-      error: "Missing or invalid recipientStripeAccountId",
+      error: "Invalid recipientStripeAccountId (must start with acct_)",
     });
   }
 
@@ -198,6 +232,24 @@ export default async function handler(req, res) {
 
   const transferGroup = `remit_${transferId}`;
 
+  const metadata = {
+    referenceId: String(referenceId),
+    transferId: String(transferId),
+    transferGroup,
+  };
+
+  // Only attach Connect-transfer metadata when a recipient account is present.
+  // Without it the webhook treats the charge as funding-only and does not
+  // attempt a Stripe transfer.
+  if (hasRecipientConnectAccount) {
+    metadata.recipientStripeAccountId = String(rawRecipientStripeAccountId);
+    metadata.recipientAmountMinor = String(recipientAmountMinor);
+    metadata.recipientCurrency = String(recipientCurrency).toLowerCase();
+  }
+
+  if (body.senderId) metadata.senderId = String(body.senderId);
+  if (body.recipientId) metadata.recipientId = String(body.recipientId);
+
   const createParams = {
     amount: quote.totalChargeCents,
     currency,
@@ -205,18 +257,8 @@ export default async function handler(req, res) {
     confirmation_method: "automatic",
     capture_method: "automatic",
     description: `NexaRemit transfer ${referenceId}`,
-    metadata: {
-      referenceId: String(referenceId),
-      transferId: String(transferId),
-      recipientStripeAccountId: String(recipientStripeAccountId),
-      recipientAmountMinor: String(recipientAmountMinor),
-      recipientCurrency: String(recipientCurrency).toLowerCase(),
-      transferGroup,
-    },
+    metadata,
   };
-
-  if (body.senderId) createParams.metadata.senderId = String(body.senderId);
-  if (body.recipientId) createParams.metadata.recipientId = String(body.recipientId);
 
   try {
     const paymentIntent = await stripe.paymentIntents.create(createParams, {
@@ -238,11 +280,16 @@ export default async function handler(req, res) {
       livemode: paymentIntent.livemode,
       referenceId,
       transferId,
-      recipientStripeAccountId,
+      recipientStripeAccountId: hasRecipientConnectAccount
+        ? rawRecipientStripeAccountId
+        : null,
+      fundingOnly: !hasRecipientConnectAccount,
       metadata: {
         referenceId,
         transferId,
-        recipientStripeAccountId,
+        recipientStripeAccountId: hasRecipientConnectAccount
+          ? rawRecipientStripeAccountId
+          : null,
         recipientAmountMinor,
         recipientCurrency,
         transferGroup,
