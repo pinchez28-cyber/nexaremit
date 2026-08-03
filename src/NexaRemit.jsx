@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import UserNotRegisteredError from "@/components/UserNotRegisteredError";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import Dashboard from "./pages/Dashboard";
 import SendMoney from "./pages/SendMoney";
 import LaunchChecklist from "./pages/LaunchChecklist";
@@ -39,6 +40,7 @@ const AuthenticatedApp = () => {
 
   return (
     <AppShell>
+      <ErrorBoundary>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/Dashboard" element={<Dashboard />} />
@@ -53,6 +55,7 @@ const AuthenticatedApp = () => {
         <Route path="/SecurityCompliance" element={<SecurityCompliance />} />
         <Route path="*" element={<PageNotFound />} />
       </Routes>
+      </ErrorBoundary>
     </AppShell>
   );
 };

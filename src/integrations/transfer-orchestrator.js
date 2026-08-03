@@ -1,6 +1,6 @@
 // src/integrations/transfer-orchestrator.js
 
-import providerConfig from "./provider-config.js";
+import { getProviderConfig } from "./provider-config.js";
 
 const PRODUCTION_MODE = "production";
 const PRODUCTION_SETTLEMENT_PROVIDER = "xrpl-mainnet";
@@ -59,7 +59,15 @@ function assertProductionProviderConfig(config) {
   return Object.freeze({ ...config });
 }
 
-const runtimeConfig = assertProductionProviderConfig(providerConfig);
+// Validation is deferred: running it at module scope would throw during
+// import and blank the whole app if any VITE_ variable is misconfigured.
+let _runtimeConfig = null;
+function runtimeConfigRef() {
+  if (!_runtimeConfig) {
+    _runtimeConfig = assertProductionProviderConfig(getProviderConfig());
+  }
+  return _runtimeConfig;
+}
 
 function trimString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -102,7 +110,7 @@ function joinUrl(baseUrl, path) {
 }
 
 function getEndpointUrl(endpointPath) {
-  return joinUrl(runtimeConfig.apiBaseUrl, endpointPath);
+  return joinUrl(runtimeConfigRef().apiBaseUrl, endpointPath);
 }
 
 async function parseResponseBody(response) {
@@ -181,10 +189,10 @@ async function requestJson(endpointPath, { method = "POST", body, headers = {}, 
 function withRuntimeContext(payload = {}) {
   return {
     ...payload,
-    provider: runtimeConfig.settlementProvider,
-    settlementProvider: runtimeConfig.settlementProvider,
-    xrplNetwork: runtimeConfig.xrplNetwork,
-    transferMode: runtimeConfig.transferMode,
+    provider: runtimeConfigRef().settlementProvider,
+    settlementProvider: runtimeConfigRef().settlementProvider,
+    xrplNetwork: runtimeConfigRef().xrplNetwork,
+    transferMode: runtimeConfigRef().transferMode,
   };
 }
 
@@ -246,14 +254,14 @@ function normalizeSettlementInput(input, quoteResult, payoutResult) {
 
 export function getTransferEnvironment() {
   return Object.freeze({
-    mode: runtimeConfig.mode,
-    transferMode: runtimeConfig.transferMode,
-    apiBaseUrl: runtimeConfig.apiBaseUrl,
-    settlementProvider: runtimeConfig.settlementProvider,
-    provider: runtimeConfig.provider,
-    xrplNetwork: runtimeConfig.xrplNetwork,
-    network: runtimeConfig.network,
-    stripePublishableKey: runtimeConfig.stripePublishableKey,
+    mode: runtimeConfigRef().mode,
+    transferMode: runtimeConfigRef().transferMode,
+    apiBaseUrl: runtimeConfigRef().apiBaseUrl,
+    settlementProvider: runtimeConfigRef().settlementProvider,
+    provider: runtimeConfigRef().provider,
+    xrplNetwork: runtimeConfigRef().xrplNetwork,
+    network: runtimeConfigRef().network,
+    stripePublishableKey: runtimeConfigRef().stripePublishableKey,
   });
 }
 

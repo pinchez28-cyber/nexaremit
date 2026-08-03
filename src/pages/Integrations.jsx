@@ -2,10 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { providerConfig } from "@/integrations/provider-config";
-const integrationChecklist = Array.isArray(providerConfig?.integrationChecklist)
-  ? providerConfig.integrationChecklist
-  : [];
+import { getProviderConfigSafe } from "@/integrations/provider-config";
 
 import { AlertTriangle, BadgeCheck, CircleDashed, FileCheck, KeyRound, Network, PlugZap, ShieldCheck } from "lucide-react";
 
@@ -100,6 +97,15 @@ const xrplReadiness = [
 ];
 
 export default function Integrations() {
+  // Resolved at render time, never at import time, so a misconfigured
+  // environment shows a message on this page instead of blanking the app.
+  const { ok: configOk, config: providerConfig, error: configError } =
+    getProviderConfigSafe();
+
+  const integrationChecklist = Array.isArray(providerConfig?.integrationChecklist)
+    ? providerConfig.integrationChecklist
+    : [];
+
   return (
     <div className="min-h-screen bg-neutral-50 p-6">
       <div className="max-w-5xl mx-auto space-y-8">
@@ -163,12 +169,24 @@ export default function Integrations() {
             <CardTitle className="flex items-center gap-2"><Network className="w-5 h-5" /> Current Provider Mode</CardTitle>
           </CardHeader>
           <CardContent className="provider-mode-grid">
-            {Object.entries(providerConfig).map(([key, value]) => (
-              <div key={key} className="provider-mode-item">
-                <span>{key}</span>
-                <strong>{value}</strong>
-              </div>
-            ))}
+            {configOk ? (
+              Object.entries(providerConfig).map(([key, value]) => (
+                <div key={key} className="provider-mode-item">
+                  <span>{key}</span>
+                  <strong>{String(value)}</strong>
+                </div>
+              ))
+            ) : (
+              <Alert className="border-red-200 bg-red-50">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                <AlertDescription className="text-red-800">
+                  Browser environment is not fully configured, so the live
+                  provider mode cannot be shown. Set the <code>VITE_</code>
+                  {" "}variables listed below in your hosting provider and
+                  redeploy. Details: {configError?.message}
+                </AlertDescription>
+              </Alert>
+            )}
           </CardContent>
         </Card>
 

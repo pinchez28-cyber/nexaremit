@@ -64,11 +64,35 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
 
+  // The API expects the SEND amount in minor units (cents) and adds platform,
+  // FX and processing fees on top. Sending major units here would undercharge
+  // by 100x, so the conversion is explicit rather than passing transferData raw.
+  const sendAmountMajor = Number(
+    transferData?.quote?.amount ?? transferData?.amount ?? 0
+  );
+  const amountMinor = Math.round(sendAmountMajor * 100);
+  const currency = String(transferData?.currency || "usd").toLowerCase();
+  const transferId = transferData?.transferId || "";
+  const recipientCurrency = String(
+    transferData?.quote?.receiveCurrency || currency
+  ).toLowerCase();
+  const recipientAmountMinor = Math.round(
+    Number(transferData?.quote?.receivedAmount || 0) * 100
+  );
+
   useEffect(() => {
     let isMounted = true;
 
     async function createIntent() {
       if (!isStripeConfigured) return;
+
+      if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
+        setStatus("error");
+        setError(
+          "No transfer amount is set yet. Go back and enter an amount before authorizing payment."
+        );
+        return;
+      }
 
       setStatus("loading");
       setError("");
@@ -77,7 +101,15 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
         const response = await fetch("/api/create-payment-intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(transferData)
+          body: JSON.stringify({
+            amount: amountMinor,
+            currency,
+            transferId,
+            referenceId: transferId,
+            recipientCurrency,
+            recipientAmountMinor:
+              recipientAmountMinor > 0 ? recipientAmountMinor : undefined
+          })
         });
 
         const payload = await response.json();
@@ -103,7 +135,15 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
     return () => {
       isMounted = false;
     };
-  }, [transferData]);
+    // Depend on primitives, not the transferData object: a new object identity
+    // on every render would re-create the PaymentIntent in a loop.
+  }, [
+    amountMinor,
+    currency,
+    transferId,
+    recipientCurrency,
+    recipientAmountMinor
+  ]);
 
   if (!isStripeConfigured) {
     return (

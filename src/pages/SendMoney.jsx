@@ -1,280 +1,276 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { loadStripe } from "@stripe/stripe-js";
-import {
-  Elements,
-  PaymentElement,
-  useElements,
-  useStripe,
-} from "@stripe/react-stripe-js";
+import React, { useCallback, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
+import { Link } from "react-router-dom";
+import RecipientSelection from "../components/send/RecipientSelection";
+import AmountInput from "../components/send/AmountInput";
+import PaymentMethod from "../components/send/PaymentMethod";
+import ReviewTransfer from "../components/send/ReviewTransfer";
+import TransferSuccess from "../components/send/TransferSuccess";
+import { calculateTransferQuote } from "@/lib/transfer-pricing";
 
-const STRIPE_PUBLISHABLE_KEY = (
-  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || ""
-).trim();
+const STEPS = {
+  RECIPIENT: "recipient",
+  AMOUNT: "amount",
+  PAYMENT: "payment",
+  REVIEW: "review",
+  SUCCESS: "success",
+};
 
-const stripePromise =
-  /^pk_(test|live)_/i.test(STRIPE_PUBLISHABLE_KEY)
-    ? loadStripe(STRIPE_PUBLISHABLE_KEY)
-    : null;
+const STEP_ORDER = [
+  STEPS.RECIPIENT,
+  STEPS.AMOUNT,
+  STEPS.PAYMENT,
+  STEPS.REVIEW,
+  STEPS.SUCCESS,
+];
 
-const isStripeConfigured = Boolean(stripePromise);
-const isProdWithTestKey =
-  import.meta.env.PROD && /^pk_test_/i.test(STRIPE_PUBLISHABLE_KEY);
+const STEP_TITLES = {
+  [STEPS.RECIPIENT]: "Select Recipient",
+  [STEPS.AMOUNT]: "Enter Amount",
+  [STEPS.PAYMENT]: "Payment Method",
+  [STEPS.REVIEW]: "Review Transfer",
+  [STEPS.SUCCESS]: "Transfer Complete",
+};
 
-function getPaymentIntentErrorMessage(payload) {
-  if (!payload || typeof payload !== "object") {
-    return "Unable to create payment intent.";
-  }
+const QUOTE_TTL_MS = 10 * 60 * 1000;
 
-  if (payload?.safety?.failures?.length) {
-    return payload.safety.failures.join(" ");
-  }
+export default function SendMoney() {
+  const [currentStep, setCurrentStep] = useState(STEPS.RECIPIENT);
+  const [quoteStatus, setQuoteStatus] = useState("idle");
+  const [quoteError, setQuoteError] = useState(null);
 
-  return (
-    payload.message ||
-    payload.error ||
-    "Unable to create payment intent."
+  // A stable id for this transfer attempt. It is used as the Stripe
+  // idempotency key, so it must NOT be regenerated on every render —
+  // otherwise each render would create a new PaymentIntent.
+  const transferIdRef = useRef(
+    `nexa-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   );
-}
 
-function StripeAuthorizationForm({ onAuthorized }) {
-  const stripe = useStripe();
-  const elements = useElements();
+  const [transferData, setTransferData] = useState({
+    recipient: null,
+    amount: null,
+    currency: "USD",
+    paymentMethod: null,
+    purpose: "family_support",
+    quote: null,
+    transferId: transferIdRef.current,
+  });
 
-  const [submitting, setSubmitting] = useState(false);
-  const [errorText, setErrorText] = useState("");
+  const updateTransferData = useCallback((data) => {
+    setTransferData((prev) => ({ ...prev, ...data }));
+  }, []);
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+  const goToStep = useCallback((step) => setCurrentStep(step), []);
 
-    if (!stripe || !elements) {
+  const nextStep = useCallback(() => {
+    setCurrentStep((step) =>
+      STEP_ORDER[Math.min(STEP_ORDER.indexOf(step) + 1, STEP_ORDER.length - 1)]
+    );
+  }, []);
+
+  const previousStep = useCallback(() => {
+    setCurrentStep((step) =>
+      STEP_ORDER[Math.max(STEP_ORDER.indexOf(step) - 1, 0)]
+    );
+  }, []);
+
+  // Build the quote, then advance to the payment step.
+  // Pricing is computed locally; the authoritative charge amount (including
+  // fees) is recomputed server-side in /api/create-payment-intent.
+  const requestQuote = useCallback(() => {
+    setQuoteError(null);
+
+    const amount = Number(transferData.amount);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setQuoteStatus("error");
+      setQuoteError(new Error("Enter an amount greater than zero to continue."));
       return;
     }
 
-    setSubmitting(true);
-    setErrorText("");
+    setQuoteStatus("loading");
 
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      redirect: "if_required",
-    });
+    try {
+      const priced = calculateTransferQuote({
+        amount,
+        currency: transferData.currency,
+        recipient: transferData.recipient,
+      });
 
-    if (error) {
-      setErrorText(error.message || "Payment authorization failed.");
-      setSubmitting(false);
-      return;
-    }
-
-    onAuthorized?.(paymentIntent?.id || "stripe_authorized");
-    setSubmitting(false);
-  };
-
-  return (
-    <form className="stripe-checkout-form" onSubmit={handleSubmit}>
-      <div style={{ marginBottom: 16 }}>
-        <PaymentElement />
-      </div>
-
-      <p className="text-sm text-neutral-600" style={{ marginBottom: 16 }}>
-        Enter the card details required for the current environment and submit
-        to authorize the transfer funding step.
-      </p>
-
-      {errorText ? (
-        <div
-          className="border-red-200 bg-red-50"
-          style={{
-            marginBottom: 16,
-            padding: 12,
-            borderRadius: 8,
-            border: "1px solid #fecaca",
-            color: "#991b1b",
-          }}
-        >
-          {errorText}
-        </div>
-      ) : null}
-
-      <button
-        type="submit"
-        disabled={!stripe || submitting}
-        className="w-full"
-        style={{
-          width: "100%",
-          height: 44,
-          border: "none",
-          borderRadius: 8,
-          background: "#0f766e",
-          color: "#ffffff",
-          fontWeight: 600,
-          cursor: !stripe || submitting ? "not-allowed" : "pointer",
-          opacity: !stripe || submitting ? 0.7 : 1,
-        }}
-      >
-        {submitting ? "Authorizing..." : "Authorize Payment"}
-      </button>
-    </form>
-  );
-}
-
-export default function SecurePaymentAuthorization({
-  transferData,
-  onAuthorized,
-}) {
-  const [clientSecret, setClientSecret] = useState("");
-  const [status, setStatus] = useState("idle");
-  const [errorText, setErrorText] = useState("");
-
-  const elementsOptions = useMemo(() => {
-    if (!clientSecret) return null;
-
-    return {
-      clientSecret,
-      appearance: {
-        theme: "stripe",
-        variables: {
-          colorPrimary: "#0f766e",
-          borderRadius: "8px",
-        },
-      },
-    };
-  }, [clientSecret]);
-
-  useEffect(() => {
-    let active = true;
-
-    async function createPaymentIntent() {
-      if (!isStripeConfigured || isProdWithTestKey) {
+      if (priced.isOverLimit) {
+        setQuoteStatus("error");
+        setQuoteError(
+          new Error(
+            `This recipient's limit is ${transferData.currency} ${priced.transferLimit.toLocaleString()} per transfer.`
+          )
+        );
         return;
       }
 
-      setStatus("loading");
-      setErrorText("");
+      const quote = {
+        id: `q-${transferIdRef.current}`,
+        amount,
+        currency: transferData.currency,
+        rate: priced.rate,
+        fee: priced.fee,
+        total: priced.total,
+        receivedAmount: priced.receivedAmount,
+        receiveCurrency: priced.receiveCurrency,
+        deliveryEstimate: priced.deliveryEstimate,
+        expiresAt: new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
+      };
 
-      try {
-        const response = await fetch("/api/create-payment-intent", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(transferData),
-        });
-
-        const payload = await response.json();
-
-        if (!response.ok) {
-          throw new Error(getPaymentIntentErrorMessage(payload));
-        }
-
-        if (!payload?.clientSecret) {
-          throw new Error("Missing clientSecret in payment intent response.");
-        }
-
-        if (active) {
-          setClientSecret(payload.clientSecret);
-          setStatus("ready");
-        }
-      } catch (error) {
-        if (active) {
-          setErrorText(
-            error?.message || "Unable to prepare secure payment form."
-          );
-          setStatus("error");
-        }
-      }
+      updateTransferData({ quote });
+      setQuoteStatus("ready");
+      goToStep(STEPS.PAYMENT);
+    } catch (error) {
+      setQuoteStatus("error");
+      setQuoteError(error);
     }
+  }, [
+    transferData.amount,
+    transferData.currency,
+    transferData.recipient,
+    updateTransferData,
+    goToStep,
+  ]);
 
-    createPaymentIntent();
+  const progress = useMemo(
+    () => ((STEP_ORDER.indexOf(currentStep) + 1) / STEP_ORDER.length) * 100,
+    [currentStep]
+  );
 
-    return () => {
-      active = false;
-    };
-  }, [transferData]);
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case STEPS.RECIPIENT:
+        return (
+          <RecipientSelection
+            selectedRecipient={transferData.recipient}
+            onSelectRecipient={(recipient) => {
+              updateTransferData({ recipient, quote: null });
+              setQuoteStatus("idle");
+              goToStep(STEPS.AMOUNT);
+            }}
+          />
+        );
 
-  if (!isStripeConfigured) {
-    return (
-      <div
-        className="border-yellow-200 bg-yellow-50"
-        style={{
-          padding: 12,
-          borderRadius: 8,
-          border: "1px solid #fde68a",
-          color: "#92400e",
-        }}
-      >
-        Stripe is not configured for this deployment. Add{" "}
-        <strong>VITE_STRIPE_PUBLISHABLE_KEY</strong> to enable the secure
-        payment form.
-      </div>
-    );
-  }
+      case STEPS.AMOUNT:
+        return (
+          <AmountInput
+            recipient={transferData.recipient}
+            amount={transferData.amount}
+            currency={transferData.currency}
+            purpose={transferData.purpose}
+            quote={transferData.quote}
+            quoteStatus={quoteStatus}
+            quoteError={quoteError}
+            onAmountChange={(data) => {
+              // Any change invalidates an existing quote.
+              updateTransferData({ ...data, quote: null });
+              setQuoteStatus("idle");
+              setQuoteError(null);
+            }}
+            onRequestQuote={requestQuote}
+            onBack={previousStep}
+          />
+        );
 
-  if (isProdWithTestKey) {
-    return (
-      <div
-        className="border-red-200 bg-red-50"
-        style={{
-          padding: 12,
-          borderRadius: 8,
-          border: "1px solid #fecaca",
-          color: "#991b1b",
-        }}
-      >
-        Production is using a <strong>test Stripe publishable key</strong>.
-        Replace <strong>VITE_STRIPE_PUBLISHABLE_KEY</strong> with a live{" "}
-        <strong>pk_live_...</strong> key and redeploy.
-      </div>
-    );
-  }
+      case STEPS.PAYMENT:
+        return (
+          <PaymentMethod
+            selectedMethod={
+              typeof transferData.paymentMethod === "string"
+                ? transferData.paymentMethod
+                : transferData.paymentMethod?.type
+            }
+            transferData={transferData}
+            onSelectMethod={(paymentMethod) => {
+              updateTransferData({ paymentMethod });
+              goToStep(STEPS.REVIEW);
+            }}
+            onBack={previousStep}
+          />
+        );
 
-  if (status === "loading") {
-    return (
-      <div className="payment-loading">
-        Preparing secure payment form...
-      </div>
-    );
-  }
+      case STEPS.REVIEW:
+        return (
+          <ReviewTransfer
+            transferData={transferData}
+            transferStatus="idle"
+            transferError={null}
+            onConfirm={() => goToStep(STEPS.SUCCESS)}
+            onBack={previousStep}
+          />
+        );
 
-  if (status === "error") {
-    return (
-      <div
-        className="border-red-200 bg-red-50"
-        style={{
-          padding: 12,
-          borderRadius: 8,
-          border: "1px solid #fecaca",
-          color: "#991b1b",
-        }}
-      >
-        {errorText}
-      </div>
-    );
-  }
+      case STEPS.SUCCESS:
+        return (
+          <TransferSuccess
+            transferData={transferData}
+            onDone={() => {
+              transferIdRef.current = `nexa-${Date.now()}-${Math.random()
+                .toString(36)
+                .slice(2, 8)}`;
+              setTransferData({
+                recipient: null,
+                amount: null,
+                currency: "USD",
+                paymentMethod: null,
+                purpose: "family_support",
+                quote: null,
+                transferId: transferIdRef.current,
+              });
+              setQuoteStatus("idle");
+              setQuoteError(null);
+              goToStep(STEPS.RECIPIENT);
+            }}
+          />
+        );
 
-  if (!clientSecret || !elementsOptions) {
-    return null;
-  }
+      default:
+        return null;
+    }
+  };
 
   return (
-    <div className="stripe-payment-card">
-      <div
-        className="p-6"
-        style={{
-          padding: 24,
-          border: "1px solid #e5e7eb",
-          borderRadius: 12,
-          background: "#ffffff",
-        }}
-      >
-        <div className="stripe-payment-head" style={{ marginBottom: 16 }}>
-          <h3 style={{ margin: 0 }}>Secure payment authorization</h3>
-          <p style={{ margin: "6px 0 0 0", color: "#525252" }}>
-            Complete card authorization to fund this transfer.
-          </p>
+    <div className="min-h-screen bg-neutral-50 p-6">
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="flex items-center gap-3">
+          <Link to="/">
+            <Button variant="outline">
+              <ArrowLeft className="w-4 h-4" /> Back
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold text-primary">
+              {STEP_TITLES[currentStep]}
+            </h1>
+            <p className="text-sm text-neutral-600">
+              Step {STEP_ORDER.indexOf(currentStep) + 1} of {STEP_ORDER.length}
+            </p>
+          </div>
         </div>
 
-        <Elements stripe={stripePromise} options={elementsOptions}>
-          <StripeAuthorizationForm onAuthorized={onAuthorized} />
-        </Elements>
+        <div
+          style={{
+            height: 8,
+            borderRadius: 999,
+            background: "#e5e7eb",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${progress}%`,
+              height: "100%",
+              background: "#0f766e",
+              transition: "width 240ms ease",
+            }}
+          />
+        </div>
+
+        {renderStepContent()}
       </div>
     </div>
   );
