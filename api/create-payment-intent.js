@@ -250,14 +250,36 @@ export default async function handler(req, res) {
   if (body.senderId) metadata.senderId = String(body.senderId);
   if (body.recipientId) metadata.recipientId = String(body.recipientId);
 
+  // Wallets (Apple Pay, Google Pay, Link) settle over the same card rails and
+  // are surfaced automatically by Stripe's PaymentElement.
+  //
+  // allow_redirects:"never" is important: the client confirms with
+  // redirect:"if_required" and no return_url, so redirect-based methods
+  // (Klarna, iDEAL, ...) would fail. Excluding them keeps the flow card+wallet
+  // only. This is very likely what broke the earlier attempt at enabling
+  // automatic payment methods.
+  //
+  // Kill switch: set NEXA_ENABLE_WALLETS=false to fall back to card-only
+  // without needing a code change or redeploy of the frontend.
+  const walletsEnabled =
+    String(process.env.NEXA_ENABLE_WALLETS || "true").trim().toLowerCase() !==
+    "false";
+
   const createParams = {
     amount: quote.totalChargeCents,
     currency,
-    payment_method_types: ["card"],
     confirmation_method: "automatic",
     capture_method: "automatic",
     description: `NexaRemit transfer ${referenceId}`,
     metadata,
+    ...(walletsEnabled
+      ? {
+          automatic_payment_methods: {
+            enabled: true,
+            allow_redirects: "never",
+          },
+        }
+      : { payment_method_types: ["card"] }),
   };
 
   try {

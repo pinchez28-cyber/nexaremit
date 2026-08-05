@@ -8,7 +8,9 @@ import StripePaymentPanel from "./StripePaymentPanel";
 const methods = [
   { id: "card", label: "Debit Card", icon: CreditCard, enabled: true },
   { id: "bank", label: "Bank Account", icon: Landmark, enabled: false },
-  { id: "wallet", label: "Digital Wallet", icon: Wallet, enabled: false }
+  // Wallets run on the same Stripe card rails as the debit-card flow, so they
+  // need no additional licensing or provider integration.
+  { id: "wallet", label: "Digital Wallet", icon: Wallet, enabled: true }
 ];
 
 export default function PaymentMethod({ selectedMethod, transferData, onSelectMethod, onBack }) {
@@ -24,7 +26,7 @@ export default function PaymentMethod({ selectedMethod, transferData, onSelectMe
         <Alert className="border-blue-200 bg-blue-50">
           <AlertTriangle className="w-5 h-5 text-blue-700" />
           <AlertDescription className="text-blue-800">
-            Debit card is the active funding flow for this transfer. Bank account and digital wallet remain unavailable until their live integrations are completed.
+            Debit card and digital wallets (Apple Pay, Google Pay, Link) are active funding flows for this transfer. Bank account remains unavailable until its live integration is completed.
           </AlertDescription>
         </Alert>
       </CardContent>
@@ -77,12 +79,21 @@ export default function PaymentMethod({ selectedMethod, transferData, onSelectMe
         )}
 
         {localMethod === "wallet" && (
-          <Alert className="border-yellow-200 bg-yellow-50">
-            <Wallet className="w-5 h-5 text-yellow-600" />
-            <AlertDescription className="text-yellow-800">
-              Digital wallet funding is not live yet for this flow. Please use Debit Card.
-            </AlertDescription>
-          </Alert>
+          <>
+            <Alert className="border-blue-200 bg-blue-50">
+              <Wallet className="w-5 h-5 text-blue-700" />
+              <AlertDescription className="text-blue-800">
+                Apple Pay, Google Pay and Link appear below when your device and browser support them. If no wallet is available, you can still pay by card here.
+              </AlertDescription>
+            </Alert>
+
+            <StripePaymentPanel
+              transferData={transferData}
+              onAuthorized={(paymentIntentId) =>
+                onSelectMethod({ type: "wallet", provider: "stripe", paymentIntentId })
+              }
+            />
+          </>
         )}
       </CardContent>
 
