@@ -265,10 +265,14 @@ export default async function handler(req, res) {
     String(process.env.NEXA_ENABLE_WALLETS || "true").trim().toLowerCase() !==
     "false";
 
+  // NOTE: confirmation_method must NOT be sent alongside
+  // automatic_payment_methods — Stripe rejects the combination with
+  // "You may only specify one of these parameters". "automatic" is Stripe's
+  // default confirmation_method anyway, so it is simply omitted here and the
+  // behaviour is unchanged for both branches.
   const createParams = {
     amount: quote.totalChargeCents,
     currency,
-    confirmation_method: "automatic",
     capture_method: "automatic",
     description: `NexaRemit transfer ${referenceId}`,
     metadata,
