@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "check:imports": "node scripts/check-imports.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^6.3.0",
@@ -22,12 +23,7 @@
     "vite": "^6.1.0",
     "xrpl": "^5.0.0"
   },
-    "engines": {
+  "engines": {
     "node": "22.x"
-  },
-  "overrides": {
-    "@noble/hashes": "1.8.0",
-    "@scure/base": "1.1.9"
   }
 }
-

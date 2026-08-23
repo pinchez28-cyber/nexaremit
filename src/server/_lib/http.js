@@ -43,6 +43,25 @@ export function assertMethod(req, res, allowedMethods) {
   }
 }
 
+/**
+ * Guard-style method check for handlers that return early instead of throwing.
+ *
+ * Returns true when the method is allowed. Otherwise it sends the 405 itself
+ * and returns false, so the caller can `if (!requireMethod(...)) return;`.
+ */
+export function requireMethod(req, res, allowedMethods) {
+  if (allowedMethods.includes(req.method)) {
+    return true;
+  }
+
+  res.setHeader("Allow", allowedMethods.join(", "));
+  sendJson(res, 405, {
+    error: `Method ${req.method} not allowed. Expected one of: ${allowedMethods.join(", ")}`,
+  });
+
+  return false;
+}
+
 export function getJsonBody(req) {
   let body;
 

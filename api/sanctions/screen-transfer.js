@@ -1,19 +1,15 @@
-﻿// api/sanctions/screen-transfer.js
+// api/sanctions/screen-transfer.js
 
 import {
   createProxyRouteHandler,
-  getBackendRuntimeConfig,
   ensurePlainObject,
 } from "../../src/server/_lib/providerGateway.js";
 
-const config = getBackendRuntimeConfig();
-
 export default createProxyRouteHandler({
   routeName: "sanctions/screen-transfer",
-  upstreamUrl: config.sanctionsScreenTransferUrl,
+  upstreamUrlKey: "sanctionsScreenTransferUrl",
   validate(body) {
     ensurePlainObject(body.sender, "sender");
     ensurePlainObject(body.recipient, "recipient");
   },
 });
-

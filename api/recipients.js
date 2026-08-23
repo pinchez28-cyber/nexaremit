@@ -5,14 +5,28 @@ import {
   requireEnum,
   requireUrl,
 } from "../src/lib/env.js";
+import { lazyConfig } from "../src/server/_lib/runtimeConfig.js";
 
-const runtimeConfig = Object.freeze({
-  transferMode: normalizeTransferMode(process.env, "TRANSFER_MODE"),
-  settlementProvider: requireEnum(process.env, "SETTLEMENT_PROVIDER", [
-    "xrpl-mainnet",
-  ]),
-  xrplNetwork: requireEnum(process.env, "XRPL_NETWORK", ["mainnet"]),
-  recipientsApiUrl: requireUrl(process.env, "RECIPIENTS_API_URL", ["https:"]),
+// Resolved per request rather than at import: an unset variable used to crash
+// this function before the handler existed, which Vercel could only report as
+// an opaque HTML 500.
+const getRuntimeConfig = lazyConfig({
+  transferMode: [
+    "TRANSFER_MODE",
+    (env) => normalizeTransferMode(env, "TRANSFER_MODE"),
+  ],
+  settlementProvider: [
+    "SETTLEMENT_PROVIDER",
+    (env) => requireEnum(env, "SETTLEMENT_PROVIDER", ["xrpl-mainnet"]),
+  ],
+  xrplNetwork: [
+    "XRPL_NETWORK",
+    (env) => requireEnum(env, "XRPL_NETWORK", ["mainnet"]),
+  ],
+  recipientsApiUrl: [
+    "RECIPIENTS_API_URL",
+    (env) => requireUrl(env, "RECIPIENTS_API_URL", ["https:"]),
+  ],
 });
 
 function createHttpError(statusCode, message, details) {
@@ -186,10 +200,10 @@ function assertProductionContextFromQuery(query) {
     const raw = ensureNonEmptyString(transferMode, "transferMode").toLowerCase();
     const normalized = raw === "live" ? "production" : raw;
 
-    if (normalized !== runtimeConfig.transferMode) {
+    if (normalized !== getRuntimeConfig().transferMode) {
       throw createHttpError(
         400,
-        `Invalid transferMode. Expected "${runtimeConfig.transferMode}", received "${transferMode}"`
+        `Invalid transferMode. Expected "${getRuntimeConfig().transferMode}", received "${transferMode}"`
       );
     }
   }
@@ -199,20 +213,20 @@ function assertProductionContextFromQuery(query) {
       settlementProvider,
       "settlementProvider"
     );
-    if (normalized !== runtimeConfig.settlementProvider) {
+    if (normalized !== getRuntimeConfig().settlementProvider) {
       throw createHttpError(
         400,
-        `Invalid settlementProvider. Expected "${runtimeConfig.settlementProvider}", received "${settlementProvider}"`
+        `Invalid settlementProvider. Expected "${getRuntimeConfig().settlementProvider}", received "${settlementProvider}"`
       );
     }
   }
 
   if (xrplNetwork !== undefined) {
     const normalized = ensureNonEmptyString(xrplNetwork, "xrplNetwork");
-    if (normalized !== runtimeConfig.xrplNetwork) {
+    if (normalized !== getRuntimeConfig().xrplNetwork) {
       throw createHttpError(
         400,
-        `Invalid xrplNetwork. Expected "${runtimeConfig.xrplNetwork}", received "${xrplNetwork}"`
+        `Invalid xrplNetwork. Expected "${getRuntimeConfig().xrplNetwork}", received "${xrplNetwork}"`
       );
     }
   }
@@ -225,44 +239,44 @@ function assertProductionContextFromBody(body) {
     const raw = ensureNonEmptyString(body.transferMode, "transferMode").toLowerCase();
     const normalized = raw === "live" ? "production" : raw;
 
-    if (normalized !== runtimeConfig.transferMode) {
+    if (normalized !== getRuntimeConfig().transferMode) {
       throw createHttpError(
         400,
-        `Invalid transferMode. Expected "${runtimeConfig.transferMode}", received "${body.transferMode}"`
+        `Invalid transferMode. Expected "${getRuntimeConfig().transferMode}", received "${body.transferMode}"`
       );
     }
   }
 
   if (body.settlementProvider !== undefined) {
-    if (body.settlementProvider !== runtimeConfig.settlementProvider) {
+    if (body.settlementProvider !== getRuntimeConfig().settlementProvider) {
       throw createHttpError(
         400,
-        `Invalid settlementProvider. Expected "${runtimeConfig.settlementProvider}", received "${body.settlementProvider}"`
+        `Invalid settlementProvider. Expected "${getRuntimeConfig().settlementProvider}", received "${body.settlementProvider}"`
       );
     }
   }
 
   if (body.provider !== undefined) {
-    if (body.provider !== runtimeConfig.settlementProvider) {
+    if (body.provider !== getRuntimeConfig().settlementProvider) {
       throw createHttpError(
         400,
-        `Invalid provider. Expected "${runtimeConfig.settlementProvider}", received "${body.provider}"`
+        `Invalid provider. Expected "${getRuntimeConfig().settlementProvider}", received "${body.provider}"`
       );
     }
   }
 
   if (body.xrplNetwork !== undefined) {
-    if (body.xrplNetwork !== runtimeConfig.xrplNetwork) {
+    if (body.xrplNetwork !== getRuntimeConfig().xrplNetwork) {
       throw createHttpError(
         400,
-        `Invalid xrplNetwork. Expected "${runtimeConfig.xrplNetwork}", received "${body.xrplNetwork}"`
+        `Invalid xrplNetwork. Expected "${getRuntimeConfig().xrplNetwork}", received "${body.xrplNetwork}"`
       );
     }
   }
 }
 
 function buildRecipientsUrl(query = {}) {
-  const url = new URL(runtimeConfig.recipientsApiUrl);
+  const url = new URL(getRuntimeConfig().recipientsApiUrl);
 
   const id = ensureOptionalNonEmptyString(query.id, "id");
   if (id) {
@@ -287,9 +301,9 @@ function buildRecipientsUrl(query = {}) {
     }
   }
 
-  url.searchParams.set("transferMode", runtimeConfig.transferMode);
-  url.searchParams.set("settlementProvider", runtimeConfig.settlementProvider);
-  url.searchParams.set("xrplNetwork", runtimeConfig.xrplNetwork);
+  url.searchParams.set("transferMode", getRuntimeConfig().transferMode);
+  url.searchParams.set("settlementProvider", getRuntimeConfig().settlementProvider);
+  url.searchParams.set("xrplNetwork", getRuntimeConfig().xrplNetwork);
 
   return url.toString();
 }
@@ -317,10 +331,10 @@ function buildCreateOrUpdatePayload(body) {
   const recipient = ensurePlainObject(body.recipient ?? body, "recipient");
 
   const payload = {
-    transferMode: runtimeConfig.transferMode,
-    settlementProvider: runtimeConfig.settlementProvider,
-    provider: runtimeConfig.settlementProvider,
-    xrplNetwork: runtimeConfig.xrplNetwork,
+    transferMode: getRuntimeConfig().transferMode,
+    settlementProvider: getRuntimeConfig().settlementProvider,
+    provider: getRuntimeConfig().settlementProvider,
+    xrplNetwork: getRuntimeConfig().xrplNetwork,
     recipient: {
       id: ensureOptionalNonEmptyString(recipient.id, "recipient.id"),
       userId: ensureOptionalNonEmptyString(recipient.userId, "recipient.userId"),
@@ -404,19 +418,19 @@ function withRuntimeContext(result) {
   if (!result || typeof result !== "object" || Array.isArray(result)) {
     return {
       result,
-      transferMode: runtimeConfig.transferMode,
-      settlementProvider: runtimeConfig.settlementProvider,
-      provider: runtimeConfig.settlementProvider,
-      xrplNetwork: runtimeConfig.xrplNetwork,
+      transferMode: getRuntimeConfig().transferMode,
+      settlementProvider: getRuntimeConfig().settlementProvider,
+      provider: getRuntimeConfig().settlementProvider,
+      xrplNetwork: getRuntimeConfig().xrplNetwork,
     };
   }
 
   return {
     ...result,
-    transferMode: runtimeConfig.transferMode,
-    settlementProvider: runtimeConfig.settlementProvider,
-    provider: runtimeConfig.settlementProvider,
-    xrplNetwork: runtimeConfig.xrplNetwork,
+    transferMode: getRuntimeConfig().transferMode,
+    settlementProvider: getRuntimeConfig().settlementProvider,
+    provider: getRuntimeConfig().settlementProvider,
+    xrplNetwork: getRuntimeConfig().xrplNetwork,
   };
 }
 

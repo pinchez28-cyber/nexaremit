@@ -1,39 +1,58 @@
 ﻿// api/_lib/xrplSettlement.js
 
 import xrpl from "xrpl";
-import { getServerRuntimeEnv } from "../../src/lib/env.js";
+import {
+  requireEnum,
+  requireUrl,
+  requireLiveStripeSecretKey,
+} from "../../lib/env.js";
+import { lazyConfig } from "./runtimeConfig.js";
 
 const { Client, xrpToDrops } = xrpl;
 
-const config = getServerRuntimeEnv(process.env);
+// Resolved on first use rather than at import: this module is pulled in by
+// every settlement route, so validating here at module scope took those
+// routes down with an unreadable 500 whenever a variable was unset.
+export const settlementConfigSpec = {
+  settlementProvider: [
+    "SETTLEMENT_PROVIDER",
+    (env) => requireEnum(env, "SETTLEMENT_PROVIDER", ["xrpl-mainnet"]),
+  ],
+  xrplNetwork: [
+    "XRPL_NETWORK",
+    (env) => requireEnum(env, "XRPL_NETWORK", ["mainnet"]),
+  ],
+  xrplServerUrl: [
+    "XRPL_SERVER_URL",
+    (env) => requireUrl(env, "XRPL_SERVER_URL", ["wss:", "https:"]),
+  ],
+  stripeSecretKey: [
+    "STRIPE_SECRET_KEY",
+    (env) => requireLiveStripeSecretKey(env, "STRIPE_SECRET_KEY"),
+  ],
+};
 
-export const xrplSettlementConfig = Object.freeze({
-  settlementProvider: config.settlementProvider,
-  xrplNetwork: config.xrplNetwork,
-  xrplServerUrl: config.xrplServerUrl,
-});
+const lazyGetConfig = lazyConfig(settlementConfigSpec);
 
 export function getXrplSettlementConfig() {
-  return xrplSettlementConfig;
+  return lazyGetConfig();
 }
 
 export function assertProductionSettlementConfig() {
-  if (xrplSettlementConfig.settlementProvider !== "xrpl-mainnet") {
+  if (getXrplSettlementConfig().settlementProvider !== "xrpl-mainnet") {
     throw new Error(
-      `[xrplSettlement] Invalid settlement provider: ${xrplSettlementConfig.settlementProvider}`
+      `[xrplSettlement] Invalid settlement provider: ${getXrplSettlementConfig().settlementProvider}`
     );
   }
 
-  if (xrplSettlementConfig.xrplNetwork !== "mainnet") {
+  if (getXrplSettlementConfig().xrplNetwork !== "mainnet") {
     throw new Error(
-      `[xrplSettlement] Invalid XRPL network: ${xrplSettlementConfig.xrplNetwork}`
+      `[xrplSettlement] Invalid XRPL network: ${getXrplSettlementConfig().xrplNetwork}`
     );
   }
 
-  return xrplSettlementConfig;
+  return getXrplSettlementConfig();
 }
-
-assertProductionSettlementConfig();
 
 function assertNonEmptyString(value, fieldName) {
   if (typeof value !== "string" || value.trim() === "") {
@@ -99,7 +118,9 @@ function encodeMemo(memo) {
 }
 
 async function createConnectedClient() {
-  const client = new Client(config.xrplServerUrl);
+  assertProductionSettlementConfig();
+
+  const client = new Client(getXrplSettlementConfig().xrplServerUrl);
   await client.connect();
   return client;
 }
@@ -130,9 +151,9 @@ export async function getNetworkInfo() {
     const serverInfo = await client.request({ command: "server_info" });
 
     return {
-      provider: xrplSettlementConfig.settlementProvider,
-      network: xrplSettlementConfig.xrplNetwork,
-      serverUrl: xrplSettlementConfig.xrplServerUrl,
+      provider: getXrplSettlementConfig().settlementProvider,
+      network: getXrplSettlementConfig().xrplNetwork,
+      serverUrl: getXrplSettlementConfig().xrplServerUrl,
       serverInfo: serverInfo.result,
     };
   });
@@ -218,9 +239,9 @@ export async function prepareSettlement({
     }
 
     return {
-      provider: xrplSettlementConfig.settlementProvider,
-      network: xrplSettlementConfig.xrplNetwork,
-      serverUrl: xrplSettlementConfig.xrplServerUrl,
+      provider: getXrplSettlementConfig().settlementProvider,
+      network: getXrplSettlementConfig().xrplNetwork,
+      serverUrl: getXrplSettlementConfig().xrplServerUrl,
       transaction: autofilled,
       signingRequired: true,
       submitMode: "signed_blob_required",
@@ -238,9 +259,9 @@ export async function submitSignedSettlement({
     const result = await client.submit(txBlob, { failHard });
 
     return {
-      provider: xrplSettlementConfig.settlementProvider,
-      network: xrplSettlementConfig.xrplNetwork,
-      serverUrl: xrplSettlementConfig.xrplServerUrl,
+      provider: getXrplSettlementConfig().settlementProvider,
+      network: getXrplSettlementConfig().xrplNetwork,
+      serverUrl: getXrplSettlementConfig().xrplServerUrl,
       result: result.result ?? result,
     };
   });
@@ -256,9 +277,9 @@ export async function submitAndWaitSignedSettlement({
     const result = await client.submitAndWait(txBlob, { failHard });
 
     return {
-      provider: xrplSettlementConfig.settlementProvider,
-      network: xrplSettlementConfig.xrplNetwork,
-      serverUrl: xrplSettlementConfig.xrplServerUrl,
+      provider: getXrplSettlementConfig().settlementProvider,
+      network: getXrplSettlementConfig().xrplNetwork,
+      serverUrl: getXrplSettlementConfig().xrplServerUrl,
       result: result.result ?? result,
     };
   });
@@ -266,9 +287,15 @@ export async function submitAndWaitSignedSettlement({
 
 const xrplSettlement = Object.freeze({
   name: "xrpl-mainnet",
-  provider: xrplSettlementConfig.settlementProvider,
-  network: xrplSettlementConfig.xrplNetwork,
-  serverUrl: xrplSettlementConfig.xrplServerUrl,
+  get provider() {
+    return getXrplSettlementConfig().settlementProvider;
+  },
+  get network() {
+    return getXrplSettlementConfig().xrplNetwork;
+  },
+  get serverUrl() {
+    return getXrplSettlementConfig().xrplServerUrl;
+  },
   getXrplSettlementConfig,
   assertProductionSettlementConfig,
   withXrplClient,

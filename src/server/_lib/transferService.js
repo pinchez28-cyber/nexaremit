@@ -1,36 +1,13 @@
 // api/_lib/transferService.js
 
-import {
-  normalizeTransferMode,
-  requireEnum,
-  requireUrl,
-} from "../../src/lib/env.js";
 import { prepareSettlement as prepareXrplSettlement } from "./xrplSettlement.js";
+import { backendConfigSpec } from "./providerGateway.js";
+import { lazyConfig } from "./runtimeConfig.js";
 
-const runtimeConfig = Object.freeze({
-  transferMode: normalizeTransferMode(process.env, "TRANSFER_MODE"),
-  settlementProvider: requireEnum(process.env, "SETTLEMENT_PROVIDER", [
-    "xrpl-mainnet",
-  ]),
-  xrplNetwork: requireEnum(process.env, "XRPL_NETWORK", ["mainnet"]),
-  kycVerifySenderUrl: requireUrl(process.env, "KYC_VERIFY_SENDER_URL", [
-    "https:",
-  ]),
-  sanctionsScreenTransferUrl: requireUrl(
-    process.env,
-    "SANCTIONS_SCREEN_TRANSFER_URL",
-    ["https:"]
-  ),
-  fundingEstimateUrl: requireUrl(process.env, "FUNDING_ESTIMATE_URL", [
-    "https:",
-  ]),
-  exchangeQuoteUrl: requireUrl(process.env, "EXCHANGE_QUOTE_URL", [
-    "https:",
-  ]),
-  payoutEstimateUrl: requireUrl(process.env, "PAYOUT_ESTIMATE_URL", [
-    "https:",
-  ]),
-});
+// NOTE: nothing imports this module today — providerGateway.js serves the
+// routes it was written for. It reuses that module's config spec rather than
+// keeping a second copy, so the two cannot drift while it stays around.
+const getRuntimeConfig = lazyConfig(backendConfigSpec);
 
 function createHttpError(statusCode, message, details) {
   const error = new Error(message);
@@ -148,37 +125,37 @@ function assertProductionContext(input) {
     const normalizedTransferMode =
       rawTransferMode === "live" ? "production" : rawTransferMode;
 
-    if (normalizedTransferMode !== runtimeConfig.transferMode) {
+    if (normalizedTransferMode !== getRuntimeConfig().transferMode) {
       throw createHttpError(
         400,
-        `Invalid transferMode. Expected "${runtimeConfig.transferMode}", received "${body.transferMode}"`
+        `Invalid transferMode. Expected "${getRuntimeConfig().transferMode}", received "${body.transferMode}"`
       );
     }
   }
 
   if (body.settlementProvider !== undefined) {
-    if (body.settlementProvider !== runtimeConfig.settlementProvider) {
+    if (body.settlementProvider !== getRuntimeConfig().settlementProvider) {
       throw createHttpError(
         400,
-        `Invalid settlementProvider. Expected "${runtimeConfig.settlementProvider}", received "${body.settlementProvider}"`
+        `Invalid settlementProvider. Expected "${getRuntimeConfig().settlementProvider}", received "${body.settlementProvider}"`
       );
     }
   }
 
   if (body.provider !== undefined) {
-    if (body.provider !== runtimeConfig.settlementProvider) {
+    if (body.provider !== getRuntimeConfig().settlementProvider) {
       throw createHttpError(
         400,
-        `Invalid provider. Expected "${runtimeConfig.settlementProvider}", received "${body.provider}"`
+        `Invalid provider. Expected "${getRuntimeConfig().settlementProvider}", received "${body.provider}"`
       );
     }
   }
 
   if (body.xrplNetwork !== undefined) {
-    if (body.xrplNetwork !== runtimeConfig.xrplNetwork) {
+    if (body.xrplNetwork !== getRuntimeConfig().xrplNetwork) {
       throw createHttpError(
         400,
-        `Invalid xrplNetwork. Expected "${runtimeConfig.xrplNetwork}", received "${body.xrplNetwork}"`
+        `Invalid xrplNetwork. Expected "${getRuntimeConfig().xrplNetwork}", received "${body.xrplNetwork}"`
       );
     }
   }
@@ -189,10 +166,10 @@ function assertProductionContext(input) {
 function withRuntimeContext(payload = {}) {
   return {
     ...payload,
-    transferMode: runtimeConfig.transferMode,
-    settlementProvider: runtimeConfig.settlementProvider,
-    provider: runtimeConfig.settlementProvider,
-    xrplNetwork: runtimeConfig.xrplNetwork,
+    transferMode: getRuntimeConfig().transferMode,
+    settlementProvider: getRuntimeConfig().settlementProvider,
+    provider: getRuntimeConfig().settlementProvider,
+    xrplNetwork: getRuntimeConfig().xrplNetwork,
   };
 }
 
@@ -410,15 +387,15 @@ function buildSettlementInput(input, quoteResult, payoutResult) {
 }
 
 export function getTransferRuntimeConfig() {
-  return runtimeConfig;
+  return getRuntimeConfig();
 }
 
 export function getProviderContext() {
   return Object.freeze({
-    transferMode: runtimeConfig.transferMode,
-    settlementProvider: runtimeConfig.settlementProvider,
-    provider: runtimeConfig.settlementProvider,
-    xrplNetwork: runtimeConfig.xrplNetwork,
+    transferMode: getRuntimeConfig().transferMode,
+    settlementProvider: getRuntimeConfig().settlementProvider,
+    provider: getRuntimeConfig().settlementProvider,
+    xrplNetwork: getRuntimeConfig().xrplNetwork,
   });
 }
 
@@ -426,7 +403,7 @@ export async function verifySender(input, options = {}) {
   const payload = normalizeVerificationInput(input);
 
   return postJson(
-    runtimeConfig.kycVerifySenderUrl,
+    getRuntimeConfig().kycVerifySenderUrl,
     payload,
     "verifySender",
     options
@@ -437,7 +414,7 @@ export async function screenTransfer(input, options = {}) {
   const payload = normalizeSanctionsInput(input);
 
   return postJson(
-    runtimeConfig.sanctionsScreenTransferUrl,
+    getRuntimeConfig().sanctionsScreenTransferUrl,
     payload,
     "screenTransfer",
     options
@@ -448,7 +425,7 @@ export async function estimateFunding(input, options = {}) {
   const payload = normalizeFundingInput(input);
 
   return postJson(
-    runtimeConfig.fundingEstimateUrl,
+    getRuntimeConfig().fundingEstimateUrl,
     payload,
     "estimateFunding",
     options
@@ -459,7 +436,7 @@ export async function quoteExchange(input, options = {}) {
   const payload = normalizeQuoteInput(input);
 
   return postJson(
-    runtimeConfig.exchangeQuoteUrl,
+    getRuntimeConfig().exchangeQuoteUrl,
     payload,
     "quoteExchange",
     options
@@ -474,7 +451,7 @@ export async function estimatePayout(input, options = {}) {
   const payload = normalizePayoutInput(input);
 
   return postJson(
-    runtimeConfig.payoutEstimateUrl,
+    getRuntimeConfig().payoutEstimateUrl,
     payload,
     "estimatePayout",
     options
@@ -514,10 +491,10 @@ export async function buildTransferPlan(input, options = {}) {
       sender: body.sender,
       corridor: body.corridor,
       metadata: body.metadata,
-      transferMode: runtimeConfig.transferMode,
-      settlementProvider: runtimeConfig.settlementProvider,
-      provider: runtimeConfig.settlementProvider,
-      xrplNetwork: runtimeConfig.xrplNetwork,
+      transferMode: getRuntimeConfig().transferMode,
+      settlementProvider: getRuntimeConfig().settlementProvider,
+      provider: getRuntimeConfig().settlementProvider,
+      xrplNetwork: getRuntimeConfig().xrplNetwork,
     },
     options
   );
@@ -532,10 +509,10 @@ export async function buildTransferPlan(input, options = {}) {
       payoutMethod: body.payoutMethod,
       corridor: body.corridor,
       metadata: body.metadata,
-      transferMode: runtimeConfig.transferMode,
-      settlementProvider: runtimeConfig.settlementProvider,
-      provider: runtimeConfig.settlementProvider,
-      xrplNetwork: runtimeConfig.xrplNetwork,
+      transferMode: getRuntimeConfig().transferMode,
+      settlementProvider: getRuntimeConfig().settlementProvider,
+      provider: getRuntimeConfig().settlementProvider,
+      xrplNetwork: getRuntimeConfig().xrplNetwork,
     },
     options
   );
@@ -548,10 +525,10 @@ export async function buildTransferPlan(input, options = {}) {
       paymentMethod: body.paymentMethod,
       corridor: body.corridor,
       metadata: body.metadata,
-      transferMode: runtimeConfig.transferMode,
-      settlementProvider: runtimeConfig.settlementProvider,
-      provider: runtimeConfig.settlementProvider,
-      xrplNetwork: runtimeConfig.xrplNetwork,
+      transferMode: getRuntimeConfig().transferMode,
+      settlementProvider: getRuntimeConfig().settlementProvider,
+      provider: getRuntimeConfig().settlementProvider,
+      xrplNetwork: getRuntimeConfig().xrplNetwork,
     },
     options
   );
@@ -566,10 +543,10 @@ export async function buildTransferPlan(input, options = {}) {
       payoutMethod: body.payoutMethod,
       corridor: body.corridor,
       metadata: body.metadata,
-      transferMode: runtimeConfig.transferMode,
-      settlementProvider: runtimeConfig.settlementProvider,
-      provider: runtimeConfig.settlementProvider,
-      xrplNetwork: runtimeConfig.xrplNetwork,
+      transferMode: getRuntimeConfig().transferMode,
+      settlementProvider: getRuntimeConfig().settlementProvider,
+      provider: getRuntimeConfig().settlementProvider,
+      xrplNetwork: getRuntimeConfig().xrplNetwork,
     },
     options
   );
@@ -585,10 +562,10 @@ export async function buildTransferPlan(input, options = {}) {
       quoteId: pickFirstDefined(body.quoteId, exchange?.quoteId, exchange?.id),
       corridor: body.corridor,
       metadata: body.metadata,
-      transferMode: runtimeConfig.transferMode,
-      settlementProvider: runtimeConfig.settlementProvider,
-      provider: runtimeConfig.settlementProvider,
-      xrplNetwork: runtimeConfig.xrplNetwork,
+      transferMode: getRuntimeConfig().transferMode,
+      settlementProvider: getRuntimeConfig().settlementProvider,
+      provider: getRuntimeConfig().settlementProvider,
+      xrplNetwork: getRuntimeConfig().xrplNetwork,
     },
     options
   );
@@ -612,10 +589,10 @@ export async function buildTransferPlan(input, options = {}) {
   });
 
   return Object.freeze({
-    provider: runtimeConfig.settlementProvider,
-    settlementProvider: runtimeConfig.settlementProvider,
-    xrplNetwork: runtimeConfig.xrplNetwork,
-    transferMode: runtimeConfig.transferMode,
+    provider: getRuntimeConfig().settlementProvider,
+    settlementProvider: getRuntimeConfig().settlementProvider,
+    xrplNetwork: getRuntimeConfig().xrplNetwork,
+    transferMode: getRuntimeConfig().transferMode,
     verification,
     sanctions,
     funding,
