@@ -6,8 +6,18 @@ import { calculateSandboxQuote } from "@/lib/transfer-pricing";
 import { sendCurrencies } from "@/lib/currency-options";
 import { AlertTriangle, Clock, PlugZap, ReceiptText } from "lucide-react";
 
-export default function AmountInput({ recipient, amount, currency, purpose, quote, quoteStatus, quoteError, onAmountChange, onRequestQuote, onBack }) {
-  const fallbackQuote = calculateSandboxQuote({ amount, currency, recipient });
+function formatRateAge(fetchedAt) {
+  if (!fetchedAt) return null;
+  const minutes = Math.max(0, Math.round((Date.now() - fetchedAt) / 60000));
+  if (minutes < 1) return "updated just now";
+  if (minutes === 1) return "updated 1 minute ago";
+  if (minutes < 60) return `updated ${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  return hours === 1 ? "updated 1 hour ago" : `updated ${hours} hours ago`;
+}
+
+export default function AmountInput({ recipient, amount, currency, purpose, quote, quoteStatus, quoteError, onAmountChange, onRequestQuote, onBack, liveRate, rateSource, rateFetchedAt }) {
+  const fallbackQuote = calculateSandboxQuote({ amount, currency, recipient, rate: liveRate });
   const mergedQuote = {
     ...fallbackQuote,
     ...(quote || {}),
@@ -76,7 +86,18 @@ export default function AmountInput({ recipient, amount, currency, purpose, quot
             <span>{quote?.id ? "Server quote ready" : "Quote preview"}</span>
           </div>
           <div className="quote-row">
-            <span>Rate</span>
+            <span>
+              Rate
+              {rateSource === "live" && rateFetchedAt ? (
+                <small style={{ display: "block", color: "#525252", fontWeight: 400 }}>
+                  Live rate, {formatRateAge(rateFetchedAt)}
+                </small>
+              ) : rateSource === "fallback" ? (
+                <small style={{ display: "block", color: "#92400e", fontWeight: 400 }}>
+                  Indicative rate — live rates unavailable
+                </small>
+              ) : null}
+            </span>
             <strong>1 {currency} = {Number(mergedQuote.rate || 0).toFixed(2)} {mergedQuote.receiveCurrency}</strong>
           </div>
           <div className="quote-row">
