@@ -14,6 +14,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 
 const ROUTE_DIR = "api";
 
@@ -51,6 +52,33 @@ async function findRoutes(dir, found = []) {
 
 for (const key of ENV_KEYS_TO_CLEAR) {
   delete process.env[key];
+}
+
+// Packages that must resolve through CommonJS as well as ESM.
+//
+// Vercel's function bundler can take the "require" condition where local Node
+// takes "import", so a package can import cleanly here and still crash in
+// production with ERR_REQUIRE_ESM. That is exactly what xrpl did: importing it
+// as ESM worked everywhere, while the deployed CJS path hit
+// @xrplf/isomorphic requiring an ESM-only @noble/hashes. Checking both
+// resolutions is the only way to catch it without deploying.
+const CJS_REQUIRED_PACKAGES = ["xrpl"];
+
+const require = createRequire(import.meta.url);
+
+for (const name of CJS_REQUIRED_PACKAGES) {
+  try {
+    require(name);
+    console.log(`ok    require("${name}") resolves through CommonJS`);
+  } catch (error) {
+    console.error(
+      `FAIL  require("${name}") — ${String(error?.message || error).split(/\r?\n/)[0]}`
+    );
+    console.error(
+      "      Imports as ESM but not as CommonJS: this crashes on Vercel only."
+    );
+    process.exit(1);
+  }
 }
 
 const routes = (await findRoutes(ROUTE_DIR)).sort();
