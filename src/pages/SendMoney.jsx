@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -8,6 +8,7 @@ import PaymentMethod from "../components/send/PaymentMethod";
 import ReviewTransfer from "../components/send/ReviewTransfer";
 import TransferSuccess from "../components/send/TransferSuccess";
 import { calculateTransferQuote } from "@/lib/transfer-pricing";
+import { getRate, refreshRates, FX_TTL_MS } from "@/lib/fx-rates";
 
 const STEPS = {
   RECIPIENT: "recipient",
@@ -61,6 +62,38 @@ export default function SendMoney() {
     setTransferData((prev) => ({ ...prev, ...data }));
   }, []);
 
+  // ---- Live FX rates -------------------------------------------------
+  // Rates refresh on mount, when the send currency changes, on an interval,
+  // and whenever the tab regains focus (so a session left open overnight
+  // doesn't quote yesterday's rate). Failures fall back to the bundled table.
+  const [fx, setFx] = useState(() =>
+    getRate(transferData.currency, transferData.recipient?.receiveCurrency)
+  );
+
+  const sendCurrency = transferData.currency;
+  const receiveCurrency = transferData.recipient?.receiveCurrency;
+
+  useEffect(() => {
+    let active = true;
+
+    const sync = async (options) => {
+      await refreshRates(sendCurrency, options);
+      if (active) setFx(getRate(sendCurrency, receiveCurrency));
+    };
+
+    sync();
+
+    const interval = setInterval(sync, FX_TTL_MS);
+    const onFocus = () => sync();
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [sendCurrency, receiveCurrency]);
+
   const goToStep = useCallback((step) => setCurrentStep(step), []);
 
   const nextStep = useCallback(() => {
@@ -96,6 +129,7 @@ export default function SendMoney() {
         amount,
         currency: transferData.currency,
         recipient: transferData.recipient,
+        rate: fx?.rate,
       });
 
       if (priced.isOverLimit) {
@@ -118,6 +152,8 @@ export default function SendMoney() {
         receivedAmount: priced.receivedAmount,
         receiveCurrency: priced.receiveCurrency,
         deliveryEstimate: priced.deliveryEstimate,
+        rateSource: fx?.source || "fallback",
+        rateFetchedAt: fx?.fetchedAt || null,
         expiresAt: new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
       };
 
@@ -132,6 +168,7 @@ export default function SendMoney() {
     transferData.amount,
     transferData.currency,
     transferData.recipient,
+    fx,
     updateTransferData,
     goToStep,
   ]);
@@ -165,6 +202,9 @@ export default function SendMoney() {
             quote={transferData.quote}
             quoteStatus={quoteStatus}
             quoteError={quoteError}
+            liveRate={fx?.rate}
+            rateSource={fx?.source}
+            rateFetchedAt={fx?.fetchedAt}
             onAmountChange={(data) => {
               // Any change invalidates an existing quote.
               updateTransferData({ ...data, quote: null });

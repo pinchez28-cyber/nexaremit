@@ -15,10 +15,14 @@ export const corridorRates = {
   JPY: { NGN: 10.6, KES: 0.83, GHS: 0.078, INR: 0.53, PHP: 0.37, MXN: 0.11, BRL: 0.033, PKR: 1.79, BDT: 0.75, ZAR: 0.117, EGP: 0.312, MAD: 0.064 }
 };
 
-export function calculateTransferQuote({ amount = 0, currency = "USD", recipient }) {
+export function calculateTransferQuote({ amount = 0, currency = "USD", recipient, rate: liveRate }) {
   const numericAmount = Number(amount || 0);
   const receiveCurrency = recipient?.receiveCurrency || "NGN";
-  const rate = corridorRates[currency]?.[receiveCurrency] || recipient?.exchangeRate || 1;
+  // A live rate (see lib/fx-rates.js) wins; the bundled table is the fallback.
+  const rate =
+    Number(liveRate) > 0
+      ? Number(liveRate)
+      : corridorRates[currency]?.[receiveCurrency] || recipient?.exchangeRate || 1;
   const fee = numericAmount > 0 ? Math.max(2.99, numericAmount * 0.012) : 0;
   const total = numericAmount + fee;
   const receivedAmount = numericAmount * rate;

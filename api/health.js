@@ -1,4 +1,12 @@
 // api/health.js
+//
+// Reports whether this deployment is configured to move money.
+//
+// This route used to validate its own configuration at module scope, so the
+// one endpoint whose job is to explain a broken deployment was the endpoint
+// that crashed first — an unset variable produced an opaque HTML 500 naming
+// nothing. Validation now runs per request and every check is reported, so a
+// misconfigured deploy can be diagnosed in one call.
 
 import {
   normalizeTransferMode,
@@ -6,58 +14,31 @@ import {
   requireUrl,
   requireLiveStripeSecretKey,
 } from "../src/lib/env.js";
+import { inspectConfig } from "../src/server/_lib/runtimeConfig.js";
+import { sendJson, sendError, assertMethod, createHttpError } from "../src/server/_lib/http.js";
 
-const runtimeConfig = Object.freeze({
-  transferMode: normalizeTransferMode(process.env, "TRANSFER_MODE"),
-  settlementProvider: requireEnum(process.env, "SETTLEMENT_PROVIDER", [
-    "xrpl-mainnet",
-  ]),
-  xrplNetwork: requireEnum(process.env, "XRPL_NETWORK", ["mainnet"]),
-  xrplServerUrl: requireUrl(process.env, "XRPL_SERVER_URL", ["wss:", "https:"]),
-  stripeSecretKey: requireLiveStripeSecretKey(
-    process.env,
-    "STRIPE_SECRET_KEY"
-  ),
-});
-
-function createHttpError(statusCode, message, details) {
-  const error = new Error(message);
-  error.statusCode = statusCode;
-  if (details !== undefined) {
-    error.details = details;
-  }
-  return error;
-}
-
-function sendJson(res, statusCode, payload) {
-  return res.status(statusCode).json(payload);
-}
-
-function sendError(res, error) {
-  const statusCode =
-    Number.isInteger(error?.statusCode) && error.statusCode >= 400
-      ? error.statusCode
-      : 500;
-
-  return res.status(statusCode).json({
-    status: "error",
-    error:
-      typeof error?.message === "string" && error.message.trim()
-        ? error.message
-        : "Internal Server Error",
-    ...(error?.details !== undefined ? { details: error.details } : {}),
-  });
-}
-
-function assertMethod(req, res, allowedMethods) {
-  if (!allowedMethods.includes(req.method)) {
-    res.setHeader("Allow", allowedMethods.join(", "));
-    throw createHttpError(
-      405,
-      `Method ${req.method} not allowed. Expected one of: ${allowedMethods.join(", ")}`
-    );
-  }
-}
+const healthConfigSpec = {
+  transferMode: [
+    "TRANSFER_MODE",
+    (env) => normalizeTransferMode(env, "TRANSFER_MODE"),
+  ],
+  settlementProvider: [
+    "SETTLEMENT_PROVIDER",
+    (env) => requireEnum(env, "SETTLEMENT_PROVIDER", ["xrpl-mainnet"]),
+  ],
+  xrplNetwork: [
+    "XRPL_NETWORK",
+    (env) => requireEnum(env, "XRPL_NETWORK", ["mainnet"]),
+  ],
+  xrplServerUrl: [
+    "XRPL_SERVER_URL",
+    (env) => requireUrl(env, "XRPL_SERVER_URL", ["wss:", "https:"]),
+  ],
+  stripeSecretKey: [
+    "STRIPE_SECRET_KEY",
+    (env) => requireLiveStripeSecretKey(env, "STRIPE_SECRET_KEY"),
+  ],
+};
 
 function redactSecret(secret) {
   if (typeof secret !== "string" || secret.length < 8) {
@@ -96,25 +77,35 @@ export default async function handler(req, res) {
     assertMethod(req, res, ["GET"]);
     assertNoUnsafeProbeValues(req);
 
+    const { ok, values, checks } = inspectConfig(healthConfigSpec);
+
+    // A failing check is the answer, not an error: report which variables are
+    // wrong and let the caller (or a deploy gate) decide what to do.
+    if (!ok) {
+      return sendJson(res, 503, {
+        status: "misconfigured",
+        environment: "production",
+        checks,
+        misconfigured: Object.values(checks)
+          .filter((check) => check.status === "fail")
+          .map((check) => check.env),
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     return sendJson(res, 200, {
       status: "ok",
       environment: "production",
-      transferMode: runtimeConfig.transferMode,
-      settlementProvider: runtimeConfig.settlementProvider,
-      xrplNetwork: runtimeConfig.xrplNetwork,
-      xrplServerUrl: runtimeConfig.xrplServerUrl,
+      transferMode: values.transferMode,
+      settlementProvider: values.settlementProvider,
+      xrplNetwork: values.xrplNetwork,
+      xrplServerUrl: values.xrplServerUrl,
       stripe: {
         configured: true,
         keyType: "live_secret",
-        keyPreview: redactSecret(runtimeConfig.stripeSecretKey),
+        keyPreview: redactSecret(values.stripeSecretKey),
       },
-      checks: {
-        transferMode: "pass",
-        settlementProvider: "pass",
-        xrplNetwork: "pass",
-        xrplServerUrl: "pass",
-        stripeSecretKey: "pass",
-      },
+      checks,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

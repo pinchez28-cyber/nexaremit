@@ -2,6 +2,40 @@ import { calculateSandboxQuote } from "@/lib/transfer-pricing";
 import { getPaymentIntentLabel, getPaymentMethodLabel } from "@/lib/payment-labels";
 
 const STORAGE_KEY = "nexaremit_sandbox_transfers";
+const DEVICE_KEY = "nexaremit:device-id";
+
+// Scopes server-side records to this browser. There is no login yet, so this
+// is the only thing separating one visitor's history from another's — it is
+// deliberately not a security boundary. See api/transfer-records.js.
+function getDeviceId() {
+  if (!canUseStorage()) return "";
+
+  let id = window.localStorage.getItem(DEVICE_KEY);
+
+  if (!id) {
+    id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+            (
+              c ^
+              (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))
+            ).toString(16)
+          );
+    window.localStorage.setItem(DEVICE_KEY, id);
+  }
+
+  return id;
+}
+
+function recordsRequestInit(extra = {}) {
+  const deviceId = getDeviceId();
+
+  return {
+    ...extra,
+    headers: { ...(extra.headers || {}), "x-nexa-device-id": deviceId }
+  };
+}
 
 export const transferStatuses = {
   payment_authorized: "Payment authorized",
@@ -103,7 +137,7 @@ export function saveTransferRecord(transferDataOrRecord) {
 export async function fetchTransferRecords() {
   const localRecords = getTransferRecords();
   try {
-    const response = await fetch("/api/transfer-records");
+    const response = await fetch("/api/transfer-records", recordsRequestInit());
     if (!response.ok) throw new Error("Could not load transfer records");
     const result = await response.json();
     if (!result.configured) return localRecords;
@@ -117,7 +151,10 @@ export async function fetchTransferRecords() {
 export async function fetchTransferRecord(id) {
   const localRecord = getTransferRecord(id);
   try {
-    const response = await fetch(`/api/transfer-records?id=${encodeURIComponent(id)}`);
+    const response = await fetch(
+      `/api/transfer-records?id=${encodeURIComponent(id)}`,
+      recordsRequestInit()
+    );
     if (!response.ok) throw new Error("Could not load transfer receipt");
     const result = await response.json();
     if (!result.configured) return localRecord;
@@ -135,11 +172,14 @@ export async function persistTransferRecord(transferDataOrRecord) {
   saveTransferRecord(record);
 
   try {
-    const response = await fetch("/api/transfer-records", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ record })
-    });
+    const response = await fetch(
+      "/api/transfer-records",
+      recordsRequestInit({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ record })
+      })
+    );
     if (!response.ok) throw new Error("Could not save transfer record");
     const result = await response.json();
     const savedRecord = result.record || record;

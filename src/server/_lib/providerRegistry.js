@@ -1,6 +1,6 @@
 import { getKycRecord } from "./kycRecords.js";
 import { screenSanctionsSubject } from "./sanctionsRecords.js";
-import { prepareXrplSettlement } from "./xrplSettlement.js";
+import { prepareSettlement as prepareXrplSettlement } from "./xrplSettlement.js";
 
 const corridorRates = {
   USD: { NGN: 1650, KES: 129, GHS: 12.1, INR: 83.2, PHP: 57.5, MXN: 17.1, BRL: 5.1, PKR: 278, BDT: 117, ZAR: 18.2, EGP: 48.5, MAD: 10.0 },

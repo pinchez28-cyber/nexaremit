@@ -4,36 +4,52 @@ import {
   requireUrl,
   requireEnum,
   normalizeTransferMode,
-} from "../../src/lib/env.js";
+} from "../../lib/env.js";
 import { createHttpError, sendJson, sendError, assertMethod, getJsonBody } from "./http.js";
+import { lazyConfig } from "./runtimeConfig.js";
 
-const runtimeConfig = Object.freeze({
-  transferMode: normalizeTransferMode(process.env, "TRANSFER_MODE"),
-  settlementProvider: requireEnum(process.env, "SETTLEMENT_PROVIDER", [
-    "xrpl-mainnet",
-  ]),
-  xrplNetwork: requireEnum(process.env, "XRPL_NETWORK", ["mainnet"]),
-  kycVerifySenderUrl: requireUrl(process.env, "KYC_VERIFY_SENDER_URL", [
-    "https:",
-  ]),
-  sanctionsScreenTransferUrl: requireUrl(
-    process.env,
+// Resolved on the first request, not at import. Building this at module scope
+// meant a single unset variable crashed the function before the handler
+// existed, leaving Vercel nothing to call and the caller an opaque HTML 500.
+export const backendConfigSpec = {
+  transferMode: [
+    "TRANSFER_MODE",
+    (env) => normalizeTransferMode(env, "TRANSFER_MODE"),
+  ],
+  settlementProvider: [
+    "SETTLEMENT_PROVIDER",
+    (env) => requireEnum(env, "SETTLEMENT_PROVIDER", ["xrpl-mainnet"]),
+  ],
+  xrplNetwork: [
+    "XRPL_NETWORK",
+    (env) => requireEnum(env, "XRPL_NETWORK", ["mainnet"]),
+  ],
+  kycVerifySenderUrl: [
+    "KYC_VERIFY_SENDER_URL",
+    (env) => requireUrl(env, "KYC_VERIFY_SENDER_URL", ["https:"]),
+  ],
+  sanctionsScreenTransferUrl: [
     "SANCTIONS_SCREEN_TRANSFER_URL",
-    ["https:"]
-  ),
-  fundingEstimateUrl: requireUrl(process.env, "FUNDING_ESTIMATE_URL", [
-    "https:",
-  ]),
-  exchangeQuoteUrl: requireUrl(process.env, "EXCHANGE_QUOTE_URL", [
-    "https:",
-  ]),
-  payoutEstimateUrl: requireUrl(process.env, "PAYOUT_ESTIMATE_URL", [
-    "https:",
-  ]),
-});
+    (env) => requireUrl(env, "SANCTIONS_SCREEN_TRANSFER_URL", ["https:"]),
+  ],
+  fundingEstimateUrl: [
+    "FUNDING_ESTIMATE_URL",
+    (env) => requireUrl(env, "FUNDING_ESTIMATE_URL", ["https:"]),
+  ],
+  exchangeQuoteUrl: [
+    "EXCHANGE_QUOTE_URL",
+    (env) => requireUrl(env, "EXCHANGE_QUOTE_URL", ["https:"]),
+  ],
+  payoutEstimateUrl: [
+    "PAYOUT_ESTIMATE_URL",
+    (env) => requireUrl(env, "PAYOUT_ESTIMATE_URL", ["https:"]),
+  ],
+};
+
+const getRuntimeConfig = lazyConfig(backendConfigSpec);
 
 export function getBackendRuntimeConfig() {
-  return runtimeConfig;
+  return getRuntimeConfig();
 }
 
 export function ensurePlainObject(value, fieldName) {
@@ -77,6 +93,7 @@ export function ensureAtLeastOneDefined(values, errorMessage) {
 }
 
 export function assertProductionRequestContext(body) {
+  const runtimeConfig = getRuntimeConfig();
   const payload = ensurePlainObject(body, "request body");
 
   const rawTransferMode = String(payload.transferMode ?? "").trim().toLowerCase();
@@ -118,6 +135,8 @@ export function assertProductionRequestContext(body) {
 }
 
 export function withProductionResponseContext(result = {}) {
+  const runtimeConfig = getRuntimeConfig();
+
   if (!result || typeof result !== "object" || Array.isArray(result)) {
     return {
       result,
@@ -200,15 +219,23 @@ export async function proxyJsonToUpstream(upstreamUrl, payload, routeName) {
   return body;
 }
 
+/**
+ * Build a proxy route.
+ *
+ * Takes upstreamUrlKey — a key of backendConfigSpec — rather than a resolved
+ * URL, so a route module no longer has to read the config at import time just
+ * to describe itself. The URL is looked up per request.
+ */
 export function createProxyRouteHandler({
   routeName,
-  upstreamUrl,
+  upstreamUrlKey,
   validate,
 }) {
   return async function handler(req, res) {
     try {
       assertMethod(req, res, ["POST"]);
 
+      const upstreamUrl = getRuntimeConfig()[upstreamUrlKey];
       const body = assertProductionRequestContext(getJsonBody(req));
 
       if (typeof validate === "function") {

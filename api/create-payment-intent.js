@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { verifyKycInquiry } from "../src/server/_lib/kycGate.js";
 
 // Stripe is created lazily inside the handler so a missing/invalid key returns
 // a clean JSON error instead of crashing the function at module load
@@ -210,6 +211,26 @@ export default async function handler(req, res) {
     });
   }
 
+  // ---- Identity gate -------------------------------------------------
+  // Runs BEFORE any PaymentIntent is created, so an unverified sender can
+  // never reach the card form with a live client secret. The browser only
+  // supplies an inquiry ID; approval itself is confirmed server-side against
+  // Persona (or the webhook-written kyc_records table).
+  const kyc = await verifyKycInquiry(
+    body.kycInquiryId || body.inquiryId || body.kyc?.inquiryId
+  );
+
+  if (!kyc.ok) {
+    return sendJson(res, 403, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "kyc-gate",
+      error: kyc.code || "kyc_required",
+      message: kyc.message || "Identity verification is required.",
+      kycStatus: kyc.status || null,
+    });
+  }
+
   const quote = buildQuote(amount);
 
   const recipientAmountMinor = Number(
@@ -236,6 +257,10 @@ export default async function handler(req, res) {
     referenceId: String(referenceId),
     transferId: String(transferId),
     transferGroup,
+    // Audit trail: which verified identity check authorised this charge.
+    kycInquiryId: String(body.kycInquiryId || body.inquiryId || ""),
+    kycVerifiedBy: String(kyc.source || ""),
+    kycStatus: String(kyc.status || (kyc.skipped ? "not_required" : "")),
   };
 
   // Only attach Connect-transfer metadata when a recipient account is present.
