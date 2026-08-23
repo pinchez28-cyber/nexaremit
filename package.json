@@ -21,9 +21,12 @@
     "react-router-dom": "^7.1.5",
     "stripe": "^22.1.1",
     "vite": "^6.1.0",
-    "xrpl": "^5.0.0"
+    "xrpl": "^4.6.0"
   },
   "engines": {
     "node": "22.x"
+  },
+  "overrides": {
+    "@xrplf/isomorphic": "1.0.1"
   }
 }
