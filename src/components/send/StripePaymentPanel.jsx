@@ -59,10 +59,35 @@ function getPaymentIntentError(payload) {
   return payload?.message || payload?.error || "Unable to create payment intent.";
 }
 
+// Persona inquiry persisted by the Setup page after identity verification.
+const KYC_STORAGE_KEY = "nexaremit:persona:return";
+
+function readKycInquiryId() {
+  try {
+    const raw = localStorage.getItem(KYC_STORAGE_KEY);
+    if (!raw) return "";
+    return String(JSON.parse(raw)?.inquiryId || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+// Server-side gate outcomes that the sender can resolve by verifying.
+const KYC_ERROR_CODES = new Set([
+  "kyc_required",
+  "kyc_incomplete",
+  "kyc_declined",
+  "kyc_inquiry_not_found",
+  "kyc_unverifiable",
+  "kyc_provider_error",
+  "kyc_provider_unreachable"
+]);
+
 export default function StripePaymentPanel({ transferData, onAuthorized }) {
   const [clientSecret, setClientSecret] = useState("");
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
+  const [needsKyc, setNeedsKyc] = useState(false);
 
   // The API expects the SEND amount in minor units (cents) and adds platform,
   // FX and processing fees on top. Sending major units here would undercharge
@@ -96,6 +121,7 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
 
       setStatus("loading");
       setError("");
+      setNeedsKyc(false);
 
       try {
         const response = await fetch("/api/create-payment-intent", {
@@ -108,13 +134,19 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
             referenceId: transferId,
             recipientCurrency,
             recipientAmountMinor:
-              recipientAmountMinor > 0 ? recipientAmountMinor : undefined
+              recipientAmountMinor > 0 ? recipientAmountMinor : undefined,
+            // Identity check reference. The server verifies this against
+            // Persona — it is not trusted as proof on its own.
+            kycInquiryId: readKycInquiryId() || undefined
           })
         });
 
         const payload = await response.json();
 
         if (!response.ok) {
+          if (isMounted && KYC_ERROR_CODES.has(payload?.error)) {
+            setNeedsKyc(true);
+          }
           throw new Error(getPaymentIntentError(payload));
         }
 
@@ -162,9 +194,27 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
 
   if (status === "error") {
     return (
-      <Alert className="border-red-200 bg-red-50">
-        <AlertTriangle className="w-5 h-5 text-red-600" />
-        <AlertDescription className="text-red-800">{error}</AlertDescription>
+      <Alert className={needsKyc ? "border-yellow-200 bg-yellow-50" : "border-red-200 bg-red-50"}>
+        {needsKyc ? (
+          <ShieldCheck className="w-5 h-5 text-yellow-600" />
+        ) : (
+          <AlertTriangle className="w-5 h-5 text-red-600" />
+        )}
+        <AlertDescription className={needsKyc ? "text-yellow-800" : "text-red-800"}>
+          {error}
+          {needsKyc && (
+            <>
+              {" "}
+              <a
+                href="/Setup"
+                style={{ fontWeight: 600, textDecoration: "underline" }}
+              >
+                Complete identity verification
+              </a>
+              , then come back to this step.
+            </>
+          )}
+        </AlertDescription>
       </Alert>
     );
   }
