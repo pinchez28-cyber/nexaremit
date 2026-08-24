@@ -75,3 +75,24 @@ alter table public.transfer_audit_logs enable row level security;
 
 -- NexaRemit writes through serverless API routes with SUPABASE_SERVICE_ROLE_KEY.
 -- Do not expose the service role key to the browser.
+
+-- Demand for funding methods that are not live yet (see api/waitlist.js).
+-- One row per email per method, so a repeat submission updates rather than
+-- duplicates.
+create table if not exists public.funding_waitlist (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  method text not null default 'bank',
+  device_id text,
+  send_amount numeric(18, 2),
+  send_currency text,
+  receive_currency text,
+  destination text,
+  created_at timestamptz not null default now(),
+  unique (email, method)
+);
+
+create index if not exists funding_waitlist_method_created_idx
+  on public.funding_waitlist (method, created_at desc);
+
+alter table public.funding_waitlist enable row level security;
