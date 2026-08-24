@@ -57,15 +57,29 @@ create table if not exists public.risk_assessments (
 create index if not exists risk_assessments_user_created_idx
   on public.risk_assessments (user_id, created_at desc);
 
+-- Append-only AML record. transfer_id is a plain reference, deliberately not a
+-- foreign key: audit rows are written before a transfer record exists, and an
+-- audit trail that cascades away with its subject is not an audit trail.
+--
+-- If you already applied an earlier version of this schema, drop the old
+-- constraint before writing audit rows:
+--   alter table public.transfer_audit_logs
+--     drop constraint if exists transfer_audit_logs_transfer_id_fkey;
 create table if not exists public.transfer_audit_logs (
   id uuid primary key default gen_random_uuid(),
-  transfer_id text references public.transfer_records(id) on delete cascade,
+  transfer_id text,
   user_id text not null,
   action text not null,
   status text not null,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
+
+create index if not exists transfer_audit_logs_user_created_idx
+  on public.transfer_audit_logs (user_id, created_at desc);
+
+create index if not exists transfer_audit_logs_transfer_idx
+  on public.transfer_audit_logs (transfer_id, created_at desc);
 
 alter table public.transfer_records enable row level security;
 alter table public.kyc_records enable row level security;

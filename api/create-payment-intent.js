@@ -1,5 +1,8 @@
 import Stripe from "stripe";
 import { verifyKycInquiry } from "../src/server/_lib/kycGate.js";
+import { requireAuthenticatedUser } from "../src/server/_lib/requireUser.js";
+import { runTransferSafetyChecks } from "../src/server/_lib/safetyEngine.js";
+import { recordAuditEvent } from "../src/server/_lib/audit.js";
 
 // Stripe is created lazily inside the handler so a missing/invalid key returns
 // a clean JSON error instead of crashing the function at module load
@@ -211,6 +214,23 @@ export default async function handler(req, res) {
     });
   }
 
+  // ---- Authentication -------------------------------------------------
+  // Establishes a durable customer id before anything else. Every control
+  // below is meaningless without one: limits, KYC linkage and the audit trail
+  // all hang off this. Verified against Supabase, never read from the body.
+  let user;
+  try {
+    user = await requireAuthenticatedUser(req);
+  } catch (authError) {
+    return sendJson(res, authError.statusCode || 401, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "authentication",
+      error: authError.details?.reason || "authentication_required",
+      message: authError.message,
+    });
+  }
+
   // ---- Identity gate -------------------------------------------------
   // Runs BEFORE any PaymentIntent is created, so an unverified sender can
   // never reach the card form with a live client secret. The browser only
@@ -228,6 +248,78 @@ export default async function handler(req, res) {
       error: kyc.code || "kyc_required",
       message: kyc.message || "Identity verification is required.",
       kycStatus: kyc.status || null,
+    });
+  }
+
+  // ---- Pre-transfer controls -----------------------------------------
+  // safetyEngine enforces corridor, recipient limit, quote expiry and the
+  // authentication/KYC/sanctions gates. It runs here, before any PaymentIntent
+  // exists, so a failure means no client secret is ever issued.
+  //
+  // Screening and risk scoring have no provider on this deployment and say so
+  // rather than reporting a pass. Sanctions therefore blocks unless
+  // NEXA_ALLOW_UNSCREENED is explicitly set for pre-launch testing.
+  const allowUnscreened =
+    String(process.env.NEXA_ALLOW_UNSCREENED || "").trim().toLowerCase() === "true";
+
+  // safetyEngine compares against recipient limits expressed in major units,
+  // while this route works in minor units throughout.
+  // NOTE: assumes a two-decimal currency, which every corridor here currently is.
+  const amountMajor = amount / 100;
+
+  const safety = runTransferSafetyChecks({
+    user,
+    amount: amountMajor,
+    currency,
+    recipient: body.recipient,
+    quote: body.quote,
+    kyc: { status: "approved", source: kyc.source || "" },
+    sanctions: { status: "not_configured" },
+    risk: { status: "not_configured" },
+    allowUnscreened,
+  });
+
+  const safetyAudit = await recordAuditEvent({
+    action: "transfer.safety_check",
+    status: safety.passed ? "passed" : "failed",
+    user,
+    transferId,
+    metadata: {
+      referenceId,
+      amountMinor: amount,
+      currency,
+      corridor: body.recipient?.corridor || null,
+      recipientName: body.recipient?.name || null,
+      failures: safety.failures,
+      warnings: safety.warnings,
+      kycSource: kyc.source || null,
+      allowUnscreened,
+    },
+  });
+
+  // If the decision cannot be recorded, the charge does not happen. An AML
+  // record is a retention obligation, so an unrecorded transfer is worse than
+  // a refused one.
+  if (!safetyAudit.persisted) {
+    return sendJson(res, 503, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "audit",
+      error: "audit_unavailable",
+      message:
+        "This transfer cannot proceed because it could not be recorded for compliance.",
+    });
+  }
+
+  if (!safety.passed) {
+    return sendJson(res, 403, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "safety-checks",
+      error: "safety_checks_failed",
+      message: "This transfer did not pass our pre-transfer checks.",
+      failures: safety.failures,
+      warnings: safety.warnings,
     });
   }
 
@@ -258,6 +350,7 @@ export default async function handler(req, res) {
     transferId: String(transferId),
     transferGroup,
     // Audit trail: which verified identity check authorised this charge.
+    userId: String(user.id),
     kycInquiryId: String(body.kycInquiryId || body.inquiryId || ""),
     kycVerifiedBy: String(kyc.source || ""),
     kycStatus: String(kyc.status || (kyc.skipped ? "not_required" : "")),
@@ -327,6 +420,24 @@ export default async function handler(req, res) {
   try {
     const paymentIntent = await stripe.paymentIntents.create(createParams, {
       idempotencyKey: `pi-${referenceId}`,
+    });
+
+    // Best-effort here, unlike the pre-charge record. The intent already
+    // exists at this point, so refusing the response would leave the customer
+    // worse off than a logged failure does.
+    await recordAuditEvent({
+      action: "payment_intent.created",
+      status: paymentIntent.status || "created",
+      user,
+      transferId,
+      metadata: {
+        referenceId,
+        paymentIntentId: paymentIntent.id,
+        amountMinor: paymentIntent.amount,
+        currency: paymentIntent.currency,
+        livemode: paymentIntent.livemode,
+        safetyWarnings: safety.warnings,
+      },
     });
 
     return sendJson(res, 200, {

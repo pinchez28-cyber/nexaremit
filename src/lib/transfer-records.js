@@ -1,4 +1,5 @@
 import { calculateSandboxQuote } from "@/lib/transfer-pricing";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getPaymentIntentLabel, getPaymentMethodLabel } from "@/lib/payment-labels";
 
 const STORAGE_KEY = "nexaremit_sandbox_transfers";
@@ -28,12 +29,33 @@ function getDeviceId() {
   return id;
 }
 
-function recordsRequestInit(extra = {}) {
+// Read straight from the live session rather than through React, because this
+// module is imported by plain functions as well as components.
+async function getAccessToken() {
+  const client = getSupabaseBrowserClient();
+  if (!client) return "";
+  try {
+    const { data } = await client.auth.getSession();
+    return data?.session?.access_token || "";
+  } catch {
+    return "";
+  }
+}
+
+// The device id is still sent so a sender who has not signed in yet keeps the
+// history they built before. Once signed in the server prefers the token and
+// ignores it.
+async function recordsRequestInit(extra = {}) {
   const deviceId = getDeviceId();
+  const accessToken = await getAccessToken();
 
   return {
     ...extra,
-    headers: { ...(extra.headers || {}), "x-nexa-device-id": deviceId }
+    headers: {
+      ...(extra.headers || {}),
+      "x-nexa-device-id": deviceId,
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+    }
   };
 }
 
@@ -137,7 +159,7 @@ export function saveTransferRecord(transferDataOrRecord) {
 export async function fetchTransferRecords() {
   const localRecords = getTransferRecords();
   try {
-    const response = await fetch("/api/transfer-records", recordsRequestInit());
+    const response = await fetch("/api/transfer-records", await recordsRequestInit());
     if (!response.ok) throw new Error("Could not load transfer records");
     const result = await response.json();
     if (!result.configured) return localRecords;
@@ -153,7 +175,7 @@ export async function fetchTransferRecord(id) {
   try {
     const response = await fetch(
       `/api/transfer-records?id=${encodeURIComponent(id)}`,
-      recordsRequestInit()
+      await recordsRequestInit()
     );
     if (!response.ok) throw new Error("Could not load transfer receipt");
     const result = await response.json();
@@ -174,7 +196,7 @@ export async function persistTransferRecord(transferDataOrRecord) {
   try {
     const response = await fetch(
       "/api/transfer-records",
-      recordsRequestInit({
+      await recordsRequestInit({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ record })

@@ -30,22 +30,34 @@ import {
   getTransferRecordById,
   saveTransferRecord,
 } from "../src/server/_lib/transferRecords.js";
+import { getAuthenticatedUser } from "../src/server/_lib/requireUser.js";
 
 const DEVICE_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function requireDeviceUser(req) {
+/**
+ * Scope records to whoever is asking.
+ *
+ * A signed-in customer owns their records across every device. The device-id
+ * path is the pre-authentication fallback, kept so a sender part-way through a
+ * transfer does not lose their history the day sign-in arrives — but it proves
+ * nothing about identity and should be retired once sign-in is required.
+ */
+async function resolveRecordOwner(req) {
+  const user = await getAuthenticatedUser(req);
+  if (user) return { id: `user:${user.id}`, authenticated: true };
+
   const raw = req.headers?.["x-nexa-device-id"];
   const deviceId = String(Array.isArray(raw) ? raw[0] : raw || "").trim();
 
   if (!DEVICE_ID_PATTERN.test(deviceId)) {
     throw createHttpError(
-      400,
-      "A valid x-nexa-device-id header (UUID v4) is required."
+      401,
+      "Sign in, or send a valid x-nexa-device-id header, to read transfer records."
     );
   }
 
-  return { id: `device:${deviceId.toLowerCase()}` };
+  return { id: `device:${deviceId.toLowerCase()}`, authenticated: false };
 }
 
 // Supabase is optional. Returning configured:false rather than an error lets
@@ -59,7 +71,7 @@ export default async function handler(req, res) {
   try {
     assertMethod(req, res, ["GET", "POST"]);
 
-    const user = requireDeviceUser(req);
+    const user = await resolveRecordOwner(req);
 
     if (req.method === "GET") {
       const id = String(req.query?.id || "").trim();

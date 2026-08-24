@@ -1,8 +1,9 @@
 ﻿import React from "react";
 import { Link, NavLink } from "react-router-dom";
-import { Bell, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Bell, LockKeyhole, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import Logo from "@/components/branding/Logo";
 import { createPageUrl } from "@/utils";
+import { useAuth } from "@/lib/AuthContext";
 
 const navItems = [
   { label: "Home", to: "/" },
@@ -17,6 +18,8 @@ const navItems = [
 ];
 
 export default function AppShell({ children }) {
+  const { isAuthConfigured, isAuthenticated, signOut, user } = useAuth();
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -46,6 +49,23 @@ export default function AppShell({ children }) {
             <button type="button" className="icon-button" aria-label="Notifications">
               <Bell className="w-5 h-5" />
             </button>
+
+            {isAuthConfigured &&
+              (isAuthenticated ? (
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={signOut}
+                  aria-label={`Sign out ${user?.email || user?.phone || ""}`}
+                  title={user?.email || user?.phone || "Sign out"}
+                >
+                  <LogOut className="w-5 h-5" />
+                </button>
+              ) : (
+                <Link to="/SignIn" className="icon-button" aria-label="Sign in">
+                  <LogIn className="w-5 h-5" />
+                </Link>
+              ))}
           </div>
         </div>
       </header>
