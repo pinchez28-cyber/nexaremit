@@ -28,7 +28,7 @@ const allowedCorridors = new Set([
  * to a recorded warning so the flow can be exercised pre-launch. It must be
  * off before real money moves — see NEXA_ALLOW_UNSCREENED.
  */
-export function runTransferSafetyChecks({ user, amount, currency, recipient, quote, kyc, sanctions, risk, allowUnscreened = false }) {
+export function runTransferSafetyChecks({ user, amount, currency, recipient, quote, kyc, sanctions, risk, velocity, velocityLimits, allowUnscreened = false }) {
   const numericAmount = Number(amount || 0);
   const failures = [];
   const warnings = [];
@@ -57,6 +57,46 @@ export function runTransferSafetyChecks({ user, amount, currency, recipient, quo
   if (!numericAmount || numericAmount <= 0) failures.push("Transfer amount must be greater than zero.");
   if (numericAmount > transferLimit) failures.push(`Transfer exceeds recipient limit of ${currency} ${transferLimit}.`);
   if (numericAmount > 1000) warnings.push("Enhanced due diligence may be required for larger transfers.");
+  // Velocity. A per-recipient cap can be cleared repeatedly, or spread across
+  // several recipients, without tripping anything - so these look at what the
+  // customer has already committed in the trailing windows, including this
+  // transfer.
+  if (velocity && velocityLimits) {
+    if (!velocity.available) {
+      // Usage could not be read. Refuse rather than assume zero, which would
+      // let every limit through whenever the database is unreachable.
+      failures.push("Transfer limits could not be checked. Please try again shortly.");
+    } else {
+      const dailyAfter = velocity.dailyAmount + numericAmount;
+      const monthlyAfter = velocity.monthlyAmount + numericAmount;
+
+      if (dailyAfter > velocityLimits.dailyAmount) {
+        failures.push(
+          `This would take you over your daily limit of ${currency} ${velocityLimits.dailyAmount.toLocaleString()}. You have sent ${currency} ${velocity.dailyAmount.toLocaleString()} in the last 24 hours.`
+        );
+      }
+
+      if (monthlyAfter > velocityLimits.monthlyAmount) {
+        failures.push(
+          `This would take you over your 30-day limit of ${currency} ${velocityLimits.monthlyAmount.toLocaleString()}. You have sent ${currency} ${velocity.monthlyAmount.toLocaleString()} in that period.`
+        );
+      }
+
+      if (velocity.dailyCount + 1 > velocityLimits.dailyCount) {
+        failures.push(
+          `You have reached the limit of ${velocityLimits.dailyCount} transfers in 24 hours.`
+        );
+      }
+
+      // Approaching a limit is worth recording even when the transfer passes:
+      // a pattern of transfers sitting just under a cap is what structuring
+      // looks like, and the audit trail is where that becomes visible.
+      if (dailyAfter > velocityLimits.dailyAmount * 0.8) {
+        warnings.push("Sender is close to their daily transfer limit.");
+      }
+    }
+  }
+
   if (quote?.expiresAt && new Date(quote.expiresAt).getTime() < Date.now()) failures.push("Quote has expired.");
   if (recipient?.risk === "Review required") warnings.push("Recipient requires manual compliance review.");
 

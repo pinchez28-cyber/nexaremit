@@ -4,6 +4,7 @@ import { requireAuthenticatedUser } from "../src/server/_lib/requireUser.js";
 import { runTransferSafetyChecks } from "../src/server/_lib/safetyEngine.js";
 import { recordAuditEvent } from "../src/server/_lib/audit.js";
 import { getRecipientForUser } from "../src/server/_lib/recipientRecords.js";
+import { getVelocityUsage, getVelocityLimits } from "../src/server/_lib/velocity.js";
 import {
   payoutMethodLabels,
   deliveryEstimates,
@@ -303,11 +304,19 @@ export default async function handler(req, res) {
     });
   }
 
+  // What this customer has already committed in the trailing 24 hours and 30
+  // days, read from the audit trail rather than from anything the browser
+  // sends.
+  const velocityLimits = getVelocityLimits();
+  const velocity = await getVelocityUsage(user, { currency });
+
   const safety = runTransferSafetyChecks({
     user,
     amount: amountMajor,
     currency,
     recipient,
+    velocity,
+    velocityLimits,
     quote: body.quote,
     kyc: { status: "approved", source: kyc.source || "" },
     sanctions: { status: "not_configured" },
@@ -330,6 +339,13 @@ export default async function handler(req, res) {
       warnings: safety.warnings,
       kycSource: kyc.source || null,
       allowUnscreened,
+      velocity: {
+        dailyAmount: velocity.dailyAmount,
+        monthlyAmount: velocity.monthlyAmount,
+        dailyCount: velocity.dailyCount,
+        available: velocity.available,
+        limits: velocityLimits,
+      },
     },
   });
 
