@@ -68,26 +68,10 @@ export const transferStatuses = {
   refunded: "Refunded"
 };
 
-const starterTransfers = [
-  {
-    id: "NX-DEMO-1001",
-    createdAt: "2026-05-16T14:20:00.000Z",
-    recipientName: "Daniel Mwangi",
-    destination: "Kenya - Mobile money",
-    sendAmount: 250,
-    sendCurrency: "USD",
-    receiveAmount: 32250,
-    receiveCurrency: "KES",
-    paymentMethod: "Debit/Credit Card",
-    paymentIntentId: "pi_demo_sandbox",
-    status: "payment_authorized",
-    events: [
-      { label: "Quote created", at: "2026-05-16T14:18:00.000Z" },
-      { label: "Stripe test payment authorized", at: "2026-05-16T14:20:00.000Z" },
-      { label: "Payout not sent in sandbox mode", at: "2026-05-16T14:20:01.000Z" }
-    ]
-  }
-];
+// No seeded history. This previously injected an invented completed transfer
+// into every new browser's local storage, which then appeared in the dashboard
+// and history as though the sender had used the product before.
+const starterTransfers = [];
 
 function canUseStorage() {
   return typeof window !== "undefined" && window.localStorage;

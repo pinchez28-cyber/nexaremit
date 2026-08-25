@@ -3,6 +3,11 @@ import { verifyKycInquiry } from "../src/server/_lib/kycGate.js";
 import { requireAuthenticatedUser } from "../src/server/_lib/requireUser.js";
 import { runTransferSafetyChecks } from "../src/server/_lib/safetyEngine.js";
 import { recordAuditEvent } from "../src/server/_lib/audit.js";
+import { getRecipientForUser } from "../src/server/_lib/recipientRecords.js";
+import {
+  payoutMethodLabels,
+  deliveryEstimates,
+} from "../src/lib/payout-destinations.js";
 
 // Stripe is created lazily inside the handler so a missing/invalid key returns
 // a clean JSON error instead of crashing the function at module load
@@ -267,11 +272,42 @@ export default async function handler(req, res) {
   // NOTE: assumes a two-decimal currency, which every corridor here currently is.
   const amountMajor = amount / 100;
 
+  // The recipient is re-read from the database rather than taken from the
+  // request. safetyEngine decides on corridor and per-recipient limit, so a
+  // body-supplied recipient would let a caller raise their own limit or claim
+  // a corridor they never registered.
+  const recipientId = String(body.recipientId || body.recipient?.id || "").trim();
+
+  if (!recipientId) {
+    return sendJson(res, 400, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "validate-input",
+      error: "recipient_required",
+      message: "Choose a saved recipient before authorizing payment.",
+    });
+  }
+
+  const recipient = await getRecipientForUser(user, recipientId, {
+    payoutMethodLabels,
+    deliveryEstimates,
+  });
+
+  if (!recipient) {
+    return sendJson(res, 404, {
+      ok: false,
+      route: "create-payment-intent",
+      stage: "validate-input",
+      error: "recipient_not_found",
+      message: "That recipient could not be found on your account.",
+    });
+  }
+
   const safety = runTransferSafetyChecks({
     user,
     amount: amountMajor,
     currency,
-    recipient: body.recipient,
+    recipient,
     quote: body.quote,
     kyc: { status: "approved", source: kyc.source || "" },
     sanctions: { status: "not_configured" },
@@ -288,8 +324,8 @@ export default async function handler(req, res) {
       referenceId,
       amountMinor: amount,
       currency,
-      corridor: body.recipient?.corridor || null,
-      recipientName: body.recipient?.name || null,
+      corridor: recipient.corridor,
+      recipientId: recipient.id,
       failures: safety.failures,
       warnings: safety.warnings,
       kycSource: kyc.source || null,

@@ -153,6 +153,8 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
             recipientCurrency,
             recipientAmountMinor:
               recipientAmountMinor > 0 ? recipientAmountMinor : undefined,
+            // Only the id: the server re-reads corridor and limit itself.
+            recipientId: transferData?.recipient?.id,
             // Identity check reference. The server verifies this against
             // Persona — it is not trusted as proof on its own.
             kycInquiryId: readKycInquiryId() || undefined
