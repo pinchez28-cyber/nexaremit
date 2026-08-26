@@ -102,7 +102,10 @@ export function getTransferRecord(id) {
 }
 
 export function buildTransferRecord(transferData) {
-  const quote = calculateSandboxQuote(transferData);
+  // Use the quote the sender actually saw and accepted. Recomputing it here
+  // silently dropped the live rate - a $200 transfer to India was quoted at
+  // 95.43 and recorded at 83.20, understating the recipient amount by 13%.
+  const quote = transferData.quote || calculateSandboxQuote(transferData);
   const paymentIntentId = getPaymentIntentLabel(transferData.paymentMethod);
   const hasPayment = Boolean(paymentIntentId);
   return {
