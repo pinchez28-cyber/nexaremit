@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "check:imports": "node scripts/check-imports.mjs",
-    "check:cjs": "node scripts/check-cjs-graph.mjs"
+    "check:cjs": "node scripts/check-cjs-graph.mjs",
+    "verify": "node scripts/verify-deployment.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^6.3.0",

@@ -5,6 +5,7 @@ import { runTransferSafetyChecks } from "../src/server/_lib/safetyEngine.js";
 import { recordAuditEvent } from "../src/server/_lib/audit.js";
 import { getRecipientForUser } from "../src/server/_lib/recipientRecords.js";
 import { getVelocityUsage, getVelocityLimits } from "../src/server/_lib/velocity.js";
+import { minorToMajor } from "../src/lib/money.js";
 import {
   payoutMethodLabels,
   deliveryEstimates,
@@ -269,9 +270,10 @@ export default async function handler(req, res) {
     String(process.env.NEXA_ALLOW_UNSCREENED || "").trim().toLowerCase() === "true";
 
   // safetyEngine compares against recipient limits expressed in major units,
-  // while this route works in minor units throughout.
-  // NOTE: assumes a two-decimal currency, which every corridor here currently is.
-  const amountMajor = amount / 100;
+  // while this route works in minor units throughout. The conversion is
+  // currency-aware: JPY has no minor unit, so dividing by 100 would understate
+  // a yen transfer a hundredfold and let it past every limit.
+  const amountMajor = minorToMajor(amount, currency);
 
   // The recipient is re-read from the database rather than taken from the
   // request. safetyEngine decides on corridor and per-recipient limit, so a

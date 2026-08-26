@@ -8,14 +8,19 @@
 // limit is the oldest pattern in money laundering, and per-transaction limits
 // alone do not see it.
 //
-// Usage is counted from transfer_audit_logs rows written by
-// create-payment-intent when an authorisation succeeds. That is the
-// server-side record of money being committed, so it cannot be influenced by
-// the browser. Counting authorisations rather than settlements is deliberately
-// conservative: an authorisation that never confirms still consumes headroom
-// until the window rolls forward.
+// Usage is counted from the transfer.safety_check rows that
+// create-payment-intent writes before authorising a charge. Those are the only
+// audit rows guaranteed to exist: the route refuses the charge outright if one
+// cannot be written, whereas the post-charge payment_intent.created row is
+// best-effort. Counting the best-effort row would mean a single failed write
+// silently granted that customer unlimited headroom from then on.
+//
+// The trade is that a transfer which passes checks and then fails at Stripe
+// still consumes headroom until the window rolls forward. For a spending
+// control, over-counting is the safe direction to be wrong in.
 
 import { getSupabaseAdminClient } from "./supabaseClient.js";
+import { minorToMajor } from "../../lib/money.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -78,7 +83,8 @@ export async function getVelocityUsage(user, { currency, now = Date.now() } = {}
     .from("transfer_audit_logs")
     .select("metadata, created_at")
     .eq("user_id", user.id)
-    .eq("action", "payment_intent.created")
+    .eq("action", "transfer.safety_check")
+    .eq("status", "passed")
     .gte("created_at", since);
 
   if (error) {
@@ -99,8 +105,7 @@ export async function getVelocityUsage(user, { currency, now = Date.now() } = {}
     const rowCurrency = String(row.metadata?.currency || "").toLowerCase();
     if (wanted && rowCurrency && rowCurrency !== wanted) continue;
 
-    const minor = Number(row.metadata?.amountMinor);
-    const major = Number.isFinite(minor) ? minor / 100 : 0;
+    const major = minorToMajor(row.metadata?.amountMinor, row.metadata?.currency);
     const at = new Date(row.created_at).getTime();
 
     monthlyAmount += major;
