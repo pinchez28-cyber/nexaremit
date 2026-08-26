@@ -35,11 +35,16 @@ export default function RecipientForm({ onAdded, onCancel }) {
   // dialling code is shown alongside rather than left for the sender to
   // remember and type.
   const isMobileNumber = payoutMethod === "mobile_money" || payoutMethod === "wallet";
+  const isUpi = payoutMethod === "upi";
+
+  const kindOf = (method) => {
+    if (method === "mobile_money" || method === "wallet") return "phone";
+    if (method === "upi") return "vpa";
+    return "account";
+  };
 
   const onMethodChange = (nextMethod) => {
-    const wasMobile = payoutMethod === "mobile_money" || payoutMethod === "wallet";
-    const isNowMobile = nextMethod === "mobile_money" || nextMethod === "wallet";
-    if (wasMobile !== isNowMobile) setAccountIdentifier("");
+    if (kindOf(payoutMethod) !== kindOf(nextMethod)) setAccountIdentifier("");
     setPayoutMethod(nextMethod);
   };
 
@@ -146,7 +151,11 @@ export default function RecipientForm({ onAdded, onCancel }) {
               htmlFor="recipient-account"
               className="block font-semibold text-primary mb-1"
             >
-              {payoutMethod === "bank" ? "Account number" : "Mobile number"}
+              {payoutMethod === "bank"
+                ? "Account number"
+                : isUpi
+                  ? "UPI ID"
+                  : "Mobile number"}
             </label>
 
             {isMobileNumber ? (
@@ -175,9 +184,24 @@ export default function RecipientForm({ onAdded, onCancel }) {
                 className={inputClass}
                 required
                 value={accountIdentifier}
-                onChange={(event) => setAccountIdentifier(event.target.value)}
-                placeholder="0123456789"
+                onChange={(event) =>
+                  // VPAs are case-insensitive and always written lowercase.
+                  setAccountIdentifier(
+                    isUpi ? event.target.value.toLowerCase() : event.target.value
+                  )
+                }
+                placeholder={isUpi ? "name@okicici" : "0123456789"}
+                autoCapitalize={isUpi ? "none" : undefined}
+                spellCheck={isUpi ? false : undefined}
+                aria-describedby={isUpi ? "recipient-account-hint" : undefined}
               />
+            )}
+
+            {isUpi && (
+              <p id="recipient-account-hint" className="text-sm text-neutral-600 mt-1">
+                The UPI ID your recipient uses in their payment app, for example
+                name@okicici or 9876543210@ybl.
+              </p>
             )}
 
             {isMobileNumber && (

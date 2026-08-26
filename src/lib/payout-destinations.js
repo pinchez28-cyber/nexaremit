@@ -56,9 +56,8 @@ export const payoutDestinations = [
     mobileExample: "98765 43210",
     country: "India",
     receiveCurrency: "INR",
-    // UPI is addressed by phone number, which is why it sits under wallet
-    // rather than bank here.
-    methods: ["bank", "wallet"],
+    // UPI first: it is how most people in India actually receive money.
+    methods: ["upi", "bank"],
     defaultLimit: 2500
   },
   {
@@ -76,13 +75,19 @@ export const payoutMethodLabels = {
   bank: "Bank transfer",
   mobile_money: "Mobile money",
   wallet: "Mobile wallet",
+  upi: "UPI",
   cash_pickup: "Cash pickup"
 };
+
+// A UPI address is a VPA - name@bankhandle - not a phone number and not an
+// account number, so it needs its own shape.
+export const UPI_VPA_PATTERN = /^[a-zA-Z0-9](?:[a-zA-Z0-9._-]{1,254})@[a-zA-Z][a-zA-Z0-9]{1,63}$/;
 
 export const deliveryEstimates = {
   bank: "Same day",
   mobile_money: "Under 30 minutes",
   wallet: "Under 1 hour",
+  upi: "Under 30 minutes",
   cash_pickup: "Same day"
 };
 

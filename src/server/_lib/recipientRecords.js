@@ -14,12 +14,22 @@
 import { getSupabaseAdminClient } from "./supabaseClient.js";
 import { createHttpError } from "./http.js";
 
-const ALLOWED_METHODS = new Set(["bank", "mobile_money", "wallet", "cash_pickup"]);
+const ALLOWED_METHODS = new Set(["bank", "mobile_money", "wallet", "upi", "cash_pickup"]);
 const ALLOWED_STATUSES = new Set(["active", "review_required", "blocked"]);
 
 function maskIdentifier(value) {
   const raw = String(value || "").replace(/\s+/g, "");
   if (!raw) return "";
+
+  // A UPI address is not a number. Masking its last four characters would hide
+  // the bank handle, which is the part that tells a sender they picked the
+  // right person, so the local part is masked and the handle kept.
+  if (raw.includes("@")) {
+    const [local, handle] = raw.split("@");
+    const head = local.slice(0, 2);
+    return `${head}${"•".repeat(Math.max(1, local.length - 2))}@${handle}`;
+  }
+
   if (raw.length <= 4) return `••${raw.slice(-2)}`;
   return `••••${raw.slice(-4)}`;
 }

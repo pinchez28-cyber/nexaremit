@@ -16,6 +16,7 @@ const methodIcons = {
   bank: Building2,
   mobile_money: Smartphone,
   wallet: Wallet,
+  upi: Smartphone,
   cash_pickup: Banknote
 };
 

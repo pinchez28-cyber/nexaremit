@@ -31,6 +31,7 @@ import {
   buildCorridor,
   payoutMethodLabels,
   deliveryEstimates,
+  UPI_VPA_PATTERN,
 } from "../src/lib/payout-destinations.js";
 
 const LABELS = { payoutMethodLabels, deliveryEstimates };
@@ -67,16 +68,30 @@ function validateNewRecipient(body) {
     );
   }
 
-  const accountIdentifier = cleanString(body.accountIdentifier, 34);
+  // A VPA is longer than an account number and contains an @, which
+  // ACCOUNT_PATTERN deliberately does not allow.
+  const accountIdentifier = cleanString(
+    body.accountIdentifier,
+    payoutMethod === "upi" ? 256 : 34
+  );
   const needsAccount = payoutMethod !== "cash_pickup";
 
-  if (needsAccount && !ACCOUNT_PATTERN.test(accountIdentifier)) {
-    throw createHttpError(
-      400,
-      payoutMethod === "bank"
-        ? "A valid account number is required."
-        : "A valid mobile money or wallet number is required."
-    );
+  if (needsAccount) {
+    const valid =
+      payoutMethod === "upi"
+        ? UPI_VPA_PATTERN.test(accountIdentifier)
+        : ACCOUNT_PATTERN.test(accountIdentifier);
+
+    if (!valid) {
+      throw createHttpError(
+        400,
+        payoutMethod === "upi"
+          ? "Enter a valid UPI ID, for example name@okicici."
+          : payoutMethod === "bank"
+            ? "A valid account number is required."
+            : "A valid mobile money or wallet number is required."
+      );
+    }
   }
 
   return {
