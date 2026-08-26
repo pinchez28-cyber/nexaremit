@@ -57,15 +57,29 @@ create table if not exists public.risk_assessments (
 create index if not exists risk_assessments_user_created_idx
   on public.risk_assessments (user_id, created_at desc);
 
+-- Append-only AML record. transfer_id is a plain reference, deliberately not a
+-- foreign key: audit rows are written before a transfer record exists, and an
+-- audit trail that cascades away with its subject is not an audit trail.
+--
+-- If you already applied an earlier version of this schema, drop the old
+-- constraint before writing audit rows:
+--   alter table public.transfer_audit_logs
+--     drop constraint if exists transfer_audit_logs_transfer_id_fkey;
 create table if not exists public.transfer_audit_logs (
   id uuid primary key default gen_random_uuid(),
-  transfer_id text references public.transfer_records(id) on delete cascade,
+  transfer_id text,
   user_id text not null,
   action text not null,
   status text not null,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
+
+create index if not exists transfer_audit_logs_user_created_idx
+  on public.transfer_audit_logs (user_id, created_at desc);
+
+create index if not exists transfer_audit_logs_transfer_idx
+  on public.transfer_audit_logs (transfer_id, created_at desc);
 
 alter table public.transfer_records enable row level security;
 alter table public.kyc_records enable row level security;
@@ -96,3 +110,32 @@ create index if not exists funding_waitlist_method_created_idx
   on public.funding_waitlist (method, created_at desc);
 
 alter table public.funding_waitlist enable row level security;
+
+-- Recipients a sender can pay out to.
+--
+-- account_identifier holds a bank account or mobile money number. It is
+-- written by the serverless routes with the service role key and never
+-- returned to the browser in full — see recipientRecords.js, which masks it to
+-- the last four digits on the way out.
+create table if not exists public.recipients (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  name text not null,
+  country text not null,
+  country_code text not null,
+  corridor text not null,
+  payout_method text not null,
+  receive_currency text not null,
+  account_identifier text,
+  account_name text,
+  bank_code text,
+  transfer_limit numeric(18, 2) not null default 2500,
+  status text not null default 'active',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists recipients_user_status_idx
+  on public.recipients (user_id, status, created_at desc);
+
+alter table public.recipients enable row level security;

@@ -1,4 +1,5 @@
 import { calculateSandboxQuote } from "@/lib/transfer-pricing";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getPaymentIntentLabel, getPaymentMethodLabel } from "@/lib/payment-labels";
 
 const STORAGE_KEY = "nexaremit_sandbox_transfers";
@@ -28,12 +29,33 @@ function getDeviceId() {
   return id;
 }
 
-function recordsRequestInit(extra = {}) {
+// Read straight from the live session rather than through React, because this
+// module is imported by plain functions as well as components.
+async function getAccessToken() {
+  const client = getSupabaseBrowserClient();
+  if (!client) return "";
+  try {
+    const { data } = await client.auth.getSession();
+    return data?.session?.access_token || "";
+  } catch {
+    return "";
+  }
+}
+
+// The device id is still sent so a sender who has not signed in yet keeps the
+// history they built before. Once signed in the server prefers the token and
+// ignores it.
+async function recordsRequestInit(extra = {}) {
   const deviceId = getDeviceId();
+  const accessToken = await getAccessToken();
 
   return {
     ...extra,
-    headers: { ...(extra.headers || {}), "x-nexa-device-id": deviceId }
+    headers: {
+      ...(extra.headers || {}),
+      "x-nexa-device-id": deviceId,
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+    }
   };
 }
 
@@ -46,26 +68,10 @@ export const transferStatuses = {
   refunded: "Refunded"
 };
 
-const starterTransfers = [
-  {
-    id: "NX-DEMO-1001",
-    createdAt: "2026-05-16T14:20:00.000Z",
-    recipientName: "Daniel Mwangi",
-    destination: "Kenya - Mobile money",
-    sendAmount: 250,
-    sendCurrency: "USD",
-    receiveAmount: 32250,
-    receiveCurrency: "KES",
-    paymentMethod: "Debit/Credit Card",
-    paymentIntentId: "pi_demo_sandbox",
-    status: "payment_authorized",
-    events: [
-      { label: "Quote created", at: "2026-05-16T14:18:00.000Z" },
-      { label: "Stripe test payment authorized", at: "2026-05-16T14:20:00.000Z" },
-      { label: "Payout not sent in sandbox mode", at: "2026-05-16T14:20:01.000Z" }
-    ]
-  }
-];
+// No seeded history. This previously injected an invented completed transfer
+// into every new browser's local storage, which then appeared in the dashboard
+// and history as though the sender had used the product before.
+const starterTransfers = [];
 
 function canUseStorage() {
   return typeof window !== "undefined" && window.localStorage;
@@ -137,7 +143,7 @@ export function saveTransferRecord(transferDataOrRecord) {
 export async function fetchTransferRecords() {
   const localRecords = getTransferRecords();
   try {
-    const response = await fetch("/api/transfer-records", recordsRequestInit());
+    const response = await fetch("/api/transfer-records", await recordsRequestInit());
     if (!response.ok) throw new Error("Could not load transfer records");
     const result = await response.json();
     if (!result.configured) return localRecords;
@@ -153,7 +159,7 @@ export async function fetchTransferRecord(id) {
   try {
     const response = await fetch(
       `/api/transfer-records?id=${encodeURIComponent(id)}`,
-      recordsRequestInit()
+      await recordsRequestInit()
     );
     if (!response.ok) throw new Error("Could not load transfer receipt");
     const result = await response.json();
@@ -174,7 +180,7 @@ export async function persistTransferRecord(transferDataOrRecord) {
   try {
     const response = await fetch(
       "/api/transfer-records",
-      recordsRequestInit({
+      await recordsRequestInit({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ record })

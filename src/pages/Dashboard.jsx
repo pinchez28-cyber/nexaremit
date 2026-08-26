@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { fetchTransferRecords, formatTransferDate } from "@/lib/transfer-records";
+import { getRate, refreshRates, FX_TTL_MS } from "@/lib/fx-rates";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -15,28 +16,61 @@ import ComplianceReadiness from "../components/dashboard/ComplianceReadiness";
 export default function Dashboard() {
   const [transactions, setTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  // These were previously seeded numbers nudged by Math.random() every three
+  // seconds, which looked like a live market feed and was not one. They now
+  // come from the same rates module the quote step uses, and simply do not
+  // move when the feed is unavailable.
   const [liveRates, setLiveRates] = useState({
-    "USD-NGN": 1650,
-    "GBP-KES": 165,
-    "EUR-GHS": 13.2
+    "USD-NGN": null,
+    "GBP-KES": null,
+    "EUR-GHS": null
   });
 
   useEffect(() => {
     loadTransactions();
-    const rateInterval = setInterval(() => {
-      setLiveRates((prev) => ({
-        "USD-NGN": prev["USD-NGN"] + (Math.random() - 0.5) * 2,
-        "GBP-KES": prev["GBP-KES"] + (Math.random() - 0.5) * 0.2,
-        "EUR-GHS": prev["EUR-GHS"] + (Math.random() - 0.5) * 0.05
-      }));
-    }, 3000);
-    return () => clearInterval(rateInterval);
+
+    let active = true;
+
+    const syncRates = async () => {
+      await Promise.all([refreshRates("USD"), refreshRates("GBP"), refreshRates("EUR")]);
+      if (!active) return;
+      setLiveRates({
+        "USD-NGN": getRate("USD", "NGN")?.rate ?? null,
+        "GBP-KES": getRate("GBP", "KES")?.rate ?? null,
+        "EUR-GHS": getRate("EUR", "GHS")?.rate ?? null
+      });
+    };
+
+    syncRates();
+    const rateInterval = setInterval(syncRates, FX_TTL_MS);
+
+    return () => {
+      active = false;
+      clearInterval(rateInterval);
+    };
   }, []);
 
+  // Real transfers belonging to the signed-in sender. Previously this read a
+  // hardcoded list of five invented transfers, all marked completed, which
+  // rendered as though the product had processed volume it never had.
   const loadTransactions = async () => {
     setIsLoading(true);
-    const data = await base44.entities.Transaction.list("-created_date", 10);
-    setTransactions(data);
+    try {
+      const records = await fetchTransferRecords();
+      setTransactions(
+        records.map((record) => ({
+          id: record.id,
+          recipient_name: record.recipientName,
+          destination_country: record.destination,
+          currency: record.sendCurrency,
+          send_amount: Number(record.sendAmount || 0),
+          status: record.status,
+          created_date: record.createdAt ? formatTransferDate(record.createdAt) : ""
+        }))
+      );
+    } catch {
+      setTransactions([]);
+    }
     setIsLoading(false);
   };
 
@@ -84,15 +118,15 @@ export default function Dashboard() {
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between text-blue-100">
                   <span>1 USD to NGN</span>
-                  <span className="font-semibold">NGN {liveRates["USD-NGN"].toFixed(2)}</span>
+                  <span className="font-semibold">{liveRates["USD-NGN"] ? `NGN ${liveRates["USD-NGN"].toFixed(2)}` : "Unavailable"}</span>
                 </div>
                 <div className="flex justify-between text-blue-100">
                   <span>1 GBP to KES</span>
-                  <span className="font-semibold">KSh {liveRates["GBP-KES"].toFixed(2)}</span>
+                  <span className="font-semibold">{liveRates["GBP-KES"] ? `KSh ${liveRates["GBP-KES"].toFixed(2)}` : "Unavailable"}</span>
                 </div>
                 <div className="flex justify-between text-blue-100">
                   <span>1 EUR to GHS</span>
-                  <span className="font-semibold">GHS {liveRates["EUR-GHS"].toFixed(2)}</span>
+                  <span className="font-semibold">{liveRates["EUR-GHS"] ? `GHS ${liveRates["EUR-GHS"].toFixed(2)}` : "Unavailable"}</span>
                 </div>
               </div>
             </div>
