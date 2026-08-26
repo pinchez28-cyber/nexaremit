@@ -6,7 +6,8 @@ import { addRecipient } from "@/lib/recipients-api";
 import {
   payoutDestinations,
   payoutMethodLabels,
-  getDestination
+  getDestination,
+  toE164
 } from "@/lib/payout-destinations";
 
 const inputClass =
@@ -30,6 +31,17 @@ export default function RecipientForm({ onAdded, onCancel }) {
 
   const destination = useMemo(() => getDestination(countryCode), [countryCode]);
   const needsAccount = payoutMethod !== "cash_pickup";
+  // Mobile money and wallets are addressed by phone number, so the country's
+  // dialling code is shown alongside rather than left for the sender to
+  // remember and type.
+  const isMobileNumber = payoutMethod === "mobile_money" || payoutMethod === "wallet";
+
+  const onMethodChange = (nextMethod) => {
+    const wasMobile = payoutMethod === "mobile_money" || payoutMethod === "wallet";
+    const isNowMobile = nextMethod === "mobile_money" || nextMethod === "wallet";
+    if (wasMobile !== isNowMobile) setAccountIdentifier("");
+    setPayoutMethod(nextMethod);
+  };
 
   const onCountryChange = (nextCode) => {
     setCountryCode(nextCode);
@@ -51,7 +63,11 @@ export default function RecipientForm({ onAdded, onCancel }) {
         countryCode,
         payoutMethod,
         accountName,
-        accountIdentifier
+        // Sent as E.164. Someone entering 0712 345 678 in Nairobi and someone
+        // entering 712345678 should reach the same wallet.
+        accountIdentifier: isMobileNumber
+          ? toE164(destination?.dialCode, accountIdentifier)
+          : accountIdentifier
       });
       setStatus("idle");
       setName("");
@@ -113,7 +129,7 @@ export default function RecipientForm({ onAdded, onCancel }) {
           id="recipient-method"
           className={inputClass}
           value={payoutMethod}
-          onChange={(event) => setPayoutMethod(event.target.value)}
+          onChange={(event) => onMethodChange(event.target.value)}
         >
           {(destination?.methods || []).map((method) => (
             <option key={method} value={method}>
@@ -132,14 +148,44 @@ export default function RecipientForm({ onAdded, onCancel }) {
             >
               {payoutMethod === "bank" ? "Account number" : "Mobile number"}
             </label>
-            <input
-              id="recipient-account"
-              className={inputClass}
-              required
-              value={accountIdentifier}
-              onChange={(event) => setAccountIdentifier(event.target.value)}
-              placeholder={payoutMethod === "bank" ? "0123456789" : "+254 700 000000"}
-            />
+
+            {isMobileNumber ? (
+              <div className="flex items-stretch">
+                <span
+                  className="flex items-center px-3 rounded-l-lg border border-r-0 border-neutral-300 bg-neutral-100 font-semibold text-primary"
+                  aria-hidden="true"
+                >
+                  {destination?.dialCode}
+                </span>
+                <input
+                  id="recipient-account"
+                  type="tel"
+                  inputMode="tel"
+                  className={`${inputClass} rounded-l-none`}
+                  required
+                  value={accountIdentifier}
+                  onChange={(event) => setAccountIdentifier(event.target.value)}
+                  placeholder={destination?.mobileExample}
+                  aria-describedby="recipient-account-hint"
+                />
+              </div>
+            ) : (
+              <input
+                id="recipient-account"
+                className={inputClass}
+                required
+                value={accountIdentifier}
+                onChange={(event) => setAccountIdentifier(event.target.value)}
+                placeholder="0123456789"
+              />
+            )}
+
+            {isMobileNumber && (
+              <p id="recipient-account-hint" className="text-sm text-neutral-600 mt-1">
+                {destination?.dialCode} is added for you. Enter the rest of the
+                number — leaving off a leading 0 is fine either way.
+              </p>
+            )}
           </div>
 
           <div>

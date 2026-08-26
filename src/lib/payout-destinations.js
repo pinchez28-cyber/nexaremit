@@ -16,6 +16,8 @@ export const SENDER_COUNTRY_CODE = "US";
 export const payoutDestinations = [
   {
     countryCode: "NG",
+    dialCode: "+234",
+    mobileExample: "801 234 5678",
     country: "Nigeria",
     receiveCurrency: "NGN",
     methods: ["bank", "mobile_money"],
@@ -23,6 +25,8 @@ export const payoutDestinations = [
   },
   {
     countryCode: "KE",
+    dialCode: "+254",
+    mobileExample: "712 345 678",
     country: "Kenya",
     receiveCurrency: "KES",
     methods: ["mobile_money", "bank"],
@@ -30,6 +34,8 @@ export const payoutDestinations = [
   },
   {
     countryCode: "GH",
+    dialCode: "+233",
+    mobileExample: "24 123 4567",
     country: "Ghana",
     receiveCurrency: "GHS",
     methods: ["mobile_money", "bank"],
@@ -37,6 +43,8 @@ export const payoutDestinations = [
   },
   {
     countryCode: "PH",
+    dialCode: "+63",
+    mobileExample: "917 123 4567",
     country: "Philippines",
     receiveCurrency: "PHP",
     methods: ["wallet", "bank"],
@@ -44,6 +52,8 @@ export const payoutDestinations = [
   },
   {
     countryCode: "MX",
+    dialCode: "+52",
+    mobileExample: "55 1234 5678",
     country: "Mexico",
     receiveCurrency: "MXN",
     methods: ["bank"],
@@ -69,6 +79,26 @@ export function getDestination(countryCode) {
   return payoutDestinations.find(
     (destination) => destination.countryCode === String(countryCode || "").toUpperCase()
   );
+}
+
+/**
+ * Turn what someone types into an E.164 number.
+ *
+ * People give their own number the way they say it at home - 0712 345 678 in
+ * Kenya, 0801... in Nigeria - and a payout provider needs +254712345678. The
+ * leading zero is a national trunk prefix that must be dropped once a country
+ * code is present, so keeping it produces a number that looks right and does
+ * not exist.
+ */
+export function toE164(dialCode, localNumber) {
+  const digits = String(localNumber || "").replace(/\D/g, "").replace(/^0+/, "");
+  if (!digits) return "";
+
+  const code = String(dialCode || "").replace(/\D/g, "");
+  // Already includes the country code, e.g. pasted as 254712345678.
+  if (code && digits.startsWith(code)) return `+${digits}`;
+
+  return `+${code}${digits}`;
 }
 
 export function buildCorridor(countryCode) {
