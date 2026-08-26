@@ -103,8 +103,6 @@
 
   try {
     const TRANSFER_MODE = toStr(process.env.TRANSFER_MODE);
-    const XRPL_NETWORK = toStr(process.env.XRPL_NETWORK);
-    const SETTLEMENT_PROVIDER = toStr(process.env.SETTLEMENT_PROVIDER);
     const PERSONA_API_KEY = toStr(process.env.PERSONA_API_KEY);
     const PERSONA_TEMPLATE_ID = toStr(process.env.PERSONA_TEMPLATE_ID);
     const PERSONA_CREATE_INQUIRY_URL =
@@ -121,25 +119,7 @@
       });
     }
 
-    if (XRPL_NETWORK !== "mainnet") {
-      return send(500, {
-        ok: false,
-        route: "kyc-start",
-        stage: "env-validation",
-        error: "XRPL_NETWORK must be 'mainnet'.",
-        value: XRPL_NETWORK || null,
-      });
-    }
 
-    if (SETTLEMENT_PROVIDER && SETTLEMENT_PROVIDER !== "xrpl-mainnet") {
-      return send(500, {
-        ok: false,
-        route: "kyc-start",
-        stage: "env-validation",
-        error: "SETTLEMENT_PROVIDER must be 'xrpl-mainnet' in production.",
-        value: SETTLEMENT_PROVIDER,
-      });
-    }
 
     if (!PERSONA_API_KEY) {
       return send(500, {

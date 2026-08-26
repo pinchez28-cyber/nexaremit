@@ -17,10 +17,6 @@ function computeConfig() {
     transferMode: env.transferMode,
     apiBaseUrl: env.apiBaseUrl,
     stripePublishableKey: env.stripePublishableKey,
-    settlementProvider: env.settlementProvider,
-    provider: env.settlementProvider,
-    xrplNetwork: env.xrplNetwork,
-    network: env.xrplNetwork,
   });
 }
 

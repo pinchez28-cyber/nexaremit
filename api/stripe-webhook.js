@@ -51,7 +51,8 @@ async function handlePaymentIntentSucceeded(stripe, paymentIntent) {
     md.recipient_stripe_account_id;
 
   // Funding-only charge: the primary NexaRemit flow funds the platform here and
-  // settles the payout over XRPL, so there is no Stripe Connect recipient. Do
+  // pays the recipient through a payout provider, so there is no Stripe
+  // Connect recipient. Do
   // NOT throw (that would 500 and make Stripe retry the webhook forever) — just
   // acknowledge the funding event.
   if (!recipientStripeAccountId) {

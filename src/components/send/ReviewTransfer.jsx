@@ -25,9 +25,6 @@ function getModeLabel() {
   return "Quote ready";
 }
 
-function getSettlementRailLabel() {
-  return "XRPL";
-}
 
 export default function ReviewTransfer({ transferData, transferStatus, transferError, onConfirm, onBack }) {
   const quote = transferData.quote;
@@ -42,10 +39,6 @@ export default function ReviewTransfer({ transferData, transferStatus, transferE
   const paymentLabel = getPaymentMethodLabel(transferData.paymentMethod);
   const paymentIntentId = getPaymentIntentLabel(transferData.paymentMethod);
 
-  const settlement =
-    transferResult?.quote?.providers?.settlement ||
-    quote?.providers?.settlement ||
-    null;
 
   const kycStatus =
     transferResult?.quote?.providers?.kyc?.status ||
@@ -188,57 +181,6 @@ export default function ReviewTransfer({ transferData, transferStatus, transferE
             <span>Screening: {sanctionsStatus}</span>
           </div>
 
-          {settlement && (
-            <section className="grid gap-3 p-4 rounded-xl border border-blue-200 bg-blue-50">
-              <span className="flex items-start gap-3">
-                <Landmark className="w-5 h-5 text-blue-700" />
-                <span className="grid gap-2">
-                  <strong className="text-primary">
-                    Settlement rail: {getSettlementRailLabel()}
-                  </strong>
-                  <small className="text-neutral-600">XRPL settlement adapter</small>
-                </span>
-              </span>
-
-              <section className="grid sm:grid-cols-2 gap-3">
-                <span className="grid gap-2 p-4 rounded-lg bg-white border border-neutral-200">
-                  <small className="text-neutral-500 font-semibold">Status</small>
-                  <strong className="text-primary">{formatStatus(settlement.status)}</strong>
-                </span>
-
-                <span className="grid gap-2 p-4 rounded-lg bg-white border border-neutral-200">
-                  <small className="text-neutral-500 font-semibold">Asset</small>
-                  <strong className="text-primary">
-                    {settlement.asset || `${quote.currency} settlement draft`}
-                  </strong>
-                </span>
-
-                <span className="grid gap-2 p-4 rounded-lg bg-white border border-neutral-200">
-                  <small className="text-neutral-500 font-semibold">Ledger action</small>
-                  <strong className="text-primary">
-                    {settlement.transactionHash
-                      ? `Transaction created: ${settlement.transactionHash}`
-                      : settlement.ledgerAction || "No blockchain transaction sent yet"}
-                  </strong>
-                </span>
-
-                <span className="grid gap-2 p-4 rounded-lg bg-white border border-neutral-200">
-                  <small className="text-neutral-500 font-semibold">Mode</small>
-                  <strong className="text-primary">
-                    {settlement.signingMode || "Settlement prepared"}
-                  </strong>
-                </span>
-              </section>
-
-              {settlement.note && (
-                <p className="text-sm text-neutral-600">{settlement.note}</p>
-              )}
-
-              {settlement.error && (
-                <p className="text-sm text-red-700">{settlement.error}</p>
-              )}
-            </section>
-          )}
         </div>
       </CardContent>
 

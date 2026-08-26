@@ -16,14 +16,6 @@ export const backendConfigSpec = {
     "TRANSFER_MODE",
     (env) => normalizeTransferMode(env, "TRANSFER_MODE"),
   ],
-  settlementProvider: [
-    "SETTLEMENT_PROVIDER",
-    (env) => requireEnum(env, "SETTLEMENT_PROVIDER", ["xrpl-mainnet"]),
-  ],
-  xrplNetwork: [
-    "XRPL_NETWORK",
-    (env) => requireEnum(env, "XRPL_NETWORK", ["mainnet"]),
-  ],
   kycVerifySenderUrl: [
     "KYC_VERIFY_SENDER_URL",
     (env) => requireUrl(env, "KYC_VERIFY_SENDER_URL", ["https:"]),
@@ -107,29 +99,8 @@ export function assertProductionRequestContext(body) {
     );
   }
 
-  if (payload.settlementProvider !== runtimeConfig.settlementProvider) {
-    throw createHttpError(
-      400,
-      `Invalid settlementProvider. Expected "${runtimeConfig.settlementProvider}", received "${payload.settlementProvider}"`
-    );
-  }
 
-  if (
-    payload.provider !== undefined &&
-    payload.provider !== runtimeConfig.settlementProvider
-  ) {
-    throw createHttpError(
-      400,
-      `Invalid provider. Expected "${runtimeConfig.settlementProvider}", received "${payload.provider}"`
-    );
-  }
 
-  if (payload.xrplNetwork !== runtimeConfig.xrplNetwork) {
-    throw createHttpError(
-      400,
-      `Invalid xrplNetwork. Expected "${runtimeConfig.xrplNetwork}", received "${payload.xrplNetwork}"`
-    );
-  }
 
   return payload;
 }
@@ -140,18 +111,12 @@ export function withProductionResponseContext(result = {}) {
   if (!result || typeof result !== "object" || Array.isArray(result)) {
     return {
       result,
-      provider: runtimeConfig.settlementProvider,
-      settlementProvider: runtimeConfig.settlementProvider,
-      xrplNetwork: runtimeConfig.xrplNetwork,
       transferMode: runtimeConfig.transferMode,
     };
   }
 
   return {
     ...result,
-    provider: runtimeConfig.settlementProvider,
-    settlementProvider: runtimeConfig.settlementProvider,
-    xrplNetwork: runtimeConfig.xrplNetwork,
     transferMode: runtimeConfig.transferMode,
   };
 }

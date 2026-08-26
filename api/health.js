@@ -22,18 +22,6 @@ const healthConfigSpec = {
     "TRANSFER_MODE",
     (env) => normalizeTransferMode(env, "TRANSFER_MODE"),
   ],
-  settlementProvider: [
-    "SETTLEMENT_PROVIDER",
-    (env) => requireEnum(env, "SETTLEMENT_PROVIDER", ["xrpl-mainnet"]),
-  ],
-  xrplNetwork: [
-    "XRPL_NETWORK",
-    (env) => requireEnum(env, "XRPL_NETWORK", ["mainnet"]),
-  ],
-  xrplServerUrl: [
-    "XRPL_SERVER_URL",
-    (env) => requireUrl(env, "XRPL_SERVER_URL", ["wss:", "https:"]),
-  ],
   // Reports which mode the key is in rather than demanding a live one.
   // Requiring sk_live_ made health fail on a deployment that is deliberately
   // in test mode - the correct state for an unlicensed product - and a check
@@ -64,8 +52,6 @@ function assertNoUnsafeProbeValues(req) {
     req.query?.mode,
     req.query?.transferMode,
     req.query?.provider,
-    req.query?.settlementProvider,
-    req.query?.xrplNetwork,
     req.query?.stripePublishableKey,
     req.query?.publishableKey,
   ].filter((value) => value !== undefined && value !== null && value !== "");
@@ -109,9 +95,6 @@ export default async function handler(req, res) {
       status: "ok",
       environment: "production",
       transferMode: values.transferMode,
-      settlementProvider: values.settlementProvider,
-      xrplNetwork: values.xrplNetwork,
-      xrplServerUrl: values.xrplServerUrl,
       stripe: {
         configured: true,
         mode: values.stripeSecretKey.startsWith("sk_live_") ? "live" : "test",

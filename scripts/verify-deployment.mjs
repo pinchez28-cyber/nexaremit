@@ -69,7 +69,6 @@ console.log(`Verifying ${target}\n`);
     "/api/health",
     "/api/recipients",
     "/api/transfer-records",
-    "/api/settlement/prepare",
     "/api/create-payment-intent",
   ];
   const htmlFallbacks = [];

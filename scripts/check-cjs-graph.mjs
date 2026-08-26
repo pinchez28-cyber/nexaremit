@@ -5,19 +5,19 @@
 // Vercel loads serverless functions through its own module loader, which does
 // NOT support require() of an ES module — it fails with ERR_REQUIRE_ESM at
 // function load, i.e. FUNCTION_INVOCATION_FAILED with no usable message. Local
-// Node 22.12+ and 24 DO support require(esm), so `require("xrpl")` succeeds on
+// Node 22.12+ and 24 DO support require(esm), so a require succeeds on
 // a dev machine and the same code dies in production. A plain require check
 // cannot catch this; it has to be checked structurally.
 //
-// The xrpl dependency chain is mid-migration to ESM-only @scure and @noble
-// packages, so this recurs whenever those versions float. Run with:
+// This guards against a dependency drifting to an ESM-only build, which is
+// how the settlement routes were once taken down. Run with:
 // npm run check:cjs
 
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 
-const ROOTS = ["xrpl", "stripe", "@supabase/supabase-js"];
+const ROOTS = ["stripe", "@supabase/supabase-js"];
 
 async function readPackageJson(dir) {
   try {

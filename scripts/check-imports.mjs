@@ -5,7 +5,7 @@
 // Six routes were once down in production at the same time with
 // FUNCTION_INVOCATION_FAILED — Vercel's response when a function throws before
 // its handler exists. The causes (config validated at module scope, a wrong
-// relative import path, a dependency override that broke `xrpl`) were all
+// relative import path, a dependency override that broke a package) were all
 // invisible to `vite build`, because none of this code is part of the bundle.
 //
 // A route that imports cleanly here can always return a real HTTP response,
@@ -22,8 +22,6 @@ const ROUTE_DIR = "api";
 const ENV_KEYS_TO_CLEAR = [
   "TRANSFER_MODE",
   "SETTLEMENT_PROVIDER",
-  "XRPL_NETWORK",
-  "XRPL_SERVER_URL",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "RECIPIENTS_API_URL",

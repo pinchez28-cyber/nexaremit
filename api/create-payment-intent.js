@@ -167,7 +167,7 @@ export default async function handler(req, res) {
   // Optional: only relevant when the recipient is a Stripe Connect account and
   // this platform performs a separate Connect transfer (see stripe-webhook.js).
   // The primary NexaRemit flow funds the platform here and settles the payout
-  // over XRPL, so this field is NOT required for a funding charge.
+  // directly, so this field is NOT required for a funding charge.
   const rawRecipientStripeAccountId = String(
     body.recipientStripeAccountId || body.recipient?.stripeAccountId || ""
   ).trim();
