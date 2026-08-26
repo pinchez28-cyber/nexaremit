@@ -51,6 +51,17 @@ export const payoutDestinations = [
     defaultLimit: 2000
   },
   {
+    countryCode: "IN",
+    dialCode: "+91",
+    mobileExample: "98765 43210",
+    country: "India",
+    receiveCurrency: "INR",
+    // UPI is addressed by phone number, which is why it sits under wallet
+    // rather than bank here.
+    methods: ["bank", "wallet"],
+    defaultLimit: 2500
+  },
+  {
     countryCode: "MX",
     dialCode: "+52",
     mobileExample: "55 1234 5678",

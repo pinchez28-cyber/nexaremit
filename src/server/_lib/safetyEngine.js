@@ -6,6 +6,7 @@ const allowedCorridors = new Set([
   "GB-KE",
   "EU-GH",
   "GB-IN",
+  "US-IN",
   "US-PH",
   "US-MX",
   "EU-BR",
