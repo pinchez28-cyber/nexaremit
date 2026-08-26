@@ -65,8 +65,8 @@ function getStatusPresentation({ status, networkLabel, amountLabel, recipientNam
     default:
       return {
         tone: "success",
-        title: "Transfer Created",
-        summary: `Your transfer for ${amountLabel} to ${recipientName} has been recorded${networkLabel ? ` with ${networkLabel} settlement details` : ""}.`
+        title: "Transfer Recorded",
+        summary: `We recorded a transfer of ${amountLabel} to ${recipientName}. No payout provider is connected yet, so the money has not been delivered.`
       };
   }
 }

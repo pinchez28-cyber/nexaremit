@@ -28,7 +28,7 @@ export default function Receipt() {
           <Card className="shadow-premium border-0">
             <CardContent className="p-8 text-center">
               <h1 className="text-2xl font-bold text-primary mb-2">Receipt not found</h1>
-              <p className="text-neutral-600 mb-6">This sandbox receipt may be on another device or browser.</p>
+              <p className="text-neutral-600 mb-6">This receipt may be on another device or browser.</p>
               <Link to={createPageUrl("History")}><Button>Back to History</Button></Link>
             </CardContent>
           </Card>
@@ -48,7 +48,7 @@ export default function Receipt() {
           <CardHeader>
             <CardTitle className="flex items-center gap-3">
               <ReceiptText className="w-6 h-6" />
-              Sandbox Receipt {record.id}
+              Transfer Receipt {record.id}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -56,9 +56,12 @@ export default function Receipt() {
               <CheckCircle className="w-7 h-7 text-green-600" />
               <div>
                 <p className="font-bold text-primary">{transferStatuses[record.status]}</p>
-                <p className="text-sm text-neutral-600">No live funds moved and no payout was sent.</p>
+                <p className="text-sm text-neutral-600">
+                  No payout provider is connected yet, so no money was delivered to the
+                  recipient. The card was authorized in Stripe test mode only.
+                </p>
               </div>
-              <Badge className="bg-green-100 text-green-800">Sandbox</Badge>
+              <Badge className="bg-yellow-100 text-yellow-800">Not delivered</Badge>
             </div>
 
             <div className="receipt-grid">

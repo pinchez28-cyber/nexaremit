@@ -63,6 +63,7 @@ export const transferStatuses = {
   payment_authorized: "Payment authorized",
   compliance_review: "Compliance review",
   payout_pending: "Payout pending",
+  payout_unavailable: "Not delivered - no payout provider",
   sandbox_complete: "Sandbox complete",
   failed: "Failed",
   refunded: "Refunded"
@@ -122,8 +123,8 @@ export function buildTransferRecord(transferData) {
     status: hasPayment ? "payment_authorized" : "sandbox_complete",
     events: [
       { label: "Quote created", at: new Date(Date.now() - 90_000).toISOString() },
-      { label: hasPayment ? "Stripe test payment authorized" : "Sandbox record created", at: new Date().toISOString() },
-      { label: "Payout not sent in sandbox mode", at: new Date().toISOString() }
+      { label: hasPayment ? "Card authorized in Stripe test mode" : "Transfer recorded", at: new Date().toISOString() },
+      { label: "Not delivered - no payout provider is connected", at: new Date().toISOString() }
     ]
   };
 }
