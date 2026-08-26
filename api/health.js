@@ -12,7 +12,7 @@ import {
   normalizeTransferMode,
   requireEnum,
   requireUrl,
-  requireLiveStripeSecretKey,
+  requireEnv,
 } from "../src/lib/env.js";
 import { inspectConfig } from "../src/server/_lib/runtimeConfig.js";
 import { sendJson, sendError, assertMethod, createHttpError } from "../src/server/_lib/http.js";
@@ -34,9 +34,21 @@ const healthConfigSpec = {
     "XRPL_SERVER_URL",
     (env) => requireUrl(env, "XRPL_SERVER_URL", ["wss:", "https:"]),
   ],
+  // Reports which mode the key is in rather than demanding a live one.
+  // Requiring sk_live_ made health fail on a deployment that is deliberately
+  // in test mode - the correct state for an unlicensed product - and a check
+  // that is permanently red is a check nobody reads.
   stripeSecretKey: [
     "STRIPE_SECRET_KEY",
-    (env) => requireLiveStripeSecretKey(env, "STRIPE_SECRET_KEY"),
+    (env) => {
+      const value = requireEnv(env, "STRIPE_SECRET_KEY");
+      if (!/^sk_(live|test)_/.test(value)) {
+        throw new Error(
+          "[env] STRIPE_SECRET_KEY must be a Stripe secret key (sk_live_ or sk_test_)"
+        );
+      }
+      return value;
+    },
   ],
 };
 
@@ -102,7 +114,10 @@ export default async function handler(req, res) {
       xrplServerUrl: values.xrplServerUrl,
       stripe: {
         configured: true,
-        keyType: "live_secret",
+        mode: values.stripeSecretKey.startsWith("sk_live_") ? "live" : "test",
+        keyType: values.stripeSecretKey.startsWith("sk_live_")
+          ? "live_secret"
+          : "test_secret",
         keyPreview: redactSecret(values.stripeSecretKey),
       },
       checks,

@@ -154,14 +154,18 @@ console.log(`Verifying ${target}\n`);
   const page = await fetch(target);
   const html = await page.text();
   const scripts = [...html.matchAll(/src="([^"]+\.js)"/g)].map((m) => m[1]);
+  // Match an actual key, not the bare prefix. env.js ships a
+  // /^pk_live_/ validation regex to the browser, so testing for the prefix
+  // alone reports a live key on a deployment that only ever mentions one —
+  // a false positive that trains you to ignore the check.
   let live = false;
   let test = false;
 
   for (const src of scripts) {
     const url = src.startsWith("http") ? src : `${target}${src}`;
     const body = await (await fetch(url)).text();
-    if (/pk_live_/.test(body)) live = true;
-    if (/pk_test_/.test(body)) test = true;
+    if (/pk_live_[A-Za-z0-9]{16,}/.test(body)) live = true;
+    if (/pk_test_[A-Za-z0-9]{16,}/.test(body)) test = true;
   }
 
   record(

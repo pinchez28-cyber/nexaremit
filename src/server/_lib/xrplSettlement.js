@@ -1,11 +1,7 @@
 ﻿// api/_lib/xrplSettlement.js
 
 import xrpl from "xrpl";
-import {
-  requireEnum,
-  requireUrl,
-  requireLiveStripeSecretKey,
-} from "../../lib/env.js";
+import { requireEnum, requireUrl } from "../../lib/env.js";
 import { lazyConfig } from "./runtimeConfig.js";
 
 const { Client, xrpToDrops } = xrpl;
@@ -25,10 +21,6 @@ export const settlementConfigSpec = {
   xrplServerUrl: [
     "XRPL_SERVER_URL",
     (env) => requireUrl(env, "XRPL_SERVER_URL", ["wss:", "https:"]),
-  ],
-  stripeSecretKey: [
-    "STRIPE_SECRET_KEY",
-    (env) => requireLiveStripeSecretKey(env, "STRIPE_SECRET_KEY"),
   ],
 };
 
