@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { recordFundedPayout } from "../src/server/_lib/payoutRecords.js";
 
 export const config = {
   api: {
@@ -54,7 +55,48 @@ async function handlePaymentIntentSucceeded(stripe, paymentIntent) {
   // NOT throw (that would 500 and make Stripe retry the webhook forever) — just
   // acknowledge the funding event.
   if (!recipientStripeAccountId) {
-    return { fundingOnly: true, paymentIntentId: currentIntent.id };
+    // Funding confirmed. Record what is now owed to the recipient, even though
+    // nothing can deliver it yet — the row sits in awaiting_provider until a
+    // payout partner is connected. Without this a funded transfer left no
+    // trace of the obligation at all.
+    //
+    // A failure here must not throw: Stripe would retry the webhook forever,
+    // and the money is already taken either way. Log it and acknowledge.
+    try {
+      const { payout, created } = await recordFundedPayout({
+        transferId: md.transferId || md.transfer_id || currentIntent.id,
+        userId: md.userId || "",
+        recipientId: md.recipientId || null,
+        recipientName: md.recipientName || "Unknown recipient",
+        corridor: md.corridor || "",
+        payoutMethod: md.payoutMethod || "",
+        destinationMasked: md.destinationMasked || "",
+        sendAmountMinor: Number(md.sendAmountMinor || currentIntent.amount || 0),
+        sendCurrency: currentIntent.currency || "usd",
+        receiveAmountMinor: Number(md.receiveAmountMinor || 0),
+        receiveCurrency: md.receiveCurrency || "",
+        quotedRate: md.quotedRate ? Number(md.quotedRate) : null,
+        metadata: { paymentIntentId: currentIntent.id },
+      });
+
+      return {
+        fundingOnly: true,
+        paymentIntentId: currentIntent.id,
+        payoutId: payout?.id || null,
+        payoutStatus: payout?.status || null,
+        payoutCreated: created,
+      };
+    } catch (payoutError) {
+      console.error(
+        `[stripe-webhook] funded ${currentIntent.id} but could not record the payout: ${payoutError.message}`
+      );
+      return {
+        fundingOnly: true,
+        paymentIntentId: currentIntent.id,
+        payoutRecorded: false,
+        payoutError: payoutError.message,
+      };
+    }
   }
 
   const referenceId =

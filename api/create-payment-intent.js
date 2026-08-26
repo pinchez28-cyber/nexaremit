@@ -408,6 +408,19 @@ export default async function handler(req, res) {
     kycInquiryId: String(body.kycInquiryId || body.inquiryId || ""),
     kycVerifiedBy: String(kyc.source || ""),
     kycStatus: String(kyc.status || (kyc.skipped ? "not_required" : "")),
+    // Carried so the webhook can record what is owed to whom the moment
+    // funding confirms. Previously a funded transfer produced nothing
+    // downstream, so there was no record of the obligation and no queue for a
+    // payout partner to work through.
+    recipientId: String(recipient.id),
+    recipientName: String(recipient.name).slice(0, 200),
+    corridor: String(recipient.corridor),
+    payoutMethod: String(recipient.payoutMethod),
+    destinationMasked: String(recipient.accountMasked || ""),
+    receiveCurrency: String(recipient.receiveCurrency),
+    sendAmountMinor: String(amount),
+    receiveAmountMinor: String(recipientAmountMinor),
+    quotedRate: String(body.quote?.rate ?? ""),
   };
 
   // Only attach Connect-transfer metadata when a recipient account is present.

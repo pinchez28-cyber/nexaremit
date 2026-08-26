@@ -139,3 +139,50 @@ create index if not exists recipients_user_status_idx
   on public.recipients (user_id, status, created_at desc);
 
 alter table public.recipients enable row level security;
+
+-- Money owed to a recipient, and how far along delivering it has got.
+--
+-- A payout row is created the moment funding is confirmed, before any provider
+-- exists to deliver it. Until now a successful card authorisation produced
+-- nothing downstream, so there was no record of what was owed to whom and no
+-- queue to work through once a payout partner signs.
+--
+-- status:
+--   awaiting_provider  funded, but no payout provider is connected
+--   pending            submitted to a provider, not yet confirmed
+--   paid               provider confirmed delivery
+--   failed             provider rejected or could not deliver
+--   refunded           returned to the sender
+create table if not exists public.payouts (
+  id uuid primary key default gen_random_uuid(),
+  transfer_id text not null,
+  user_id text not null,
+  recipient_id uuid,
+  recipient_name text not null,
+  corridor text not null,
+  payout_method text not null,
+  destination_masked text,
+  send_amount_minor bigint not null,
+  send_currency text not null,
+  receive_amount_minor bigint not null,
+  receive_currency text not null,
+  quoted_rate numeric(18, 6),
+  status text not null default 'awaiting_provider',
+  provider text,
+  provider_reference text,
+  failure_reason text,
+  funded_at timestamptz,
+  paid_at timestamptz,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (transfer_id)
+);
+
+create index if not exists payouts_status_created_idx
+  on public.payouts (status, created_at desc);
+
+create index if not exists payouts_user_created_idx
+  on public.payouts (user_id, created_at desc);
+
+alter table public.payouts enable row level security;
