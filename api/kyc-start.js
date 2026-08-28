@@ -1,4 +1,7 @@
-﻿export default async function handler(req, res) {
+﻿import { requireAuthenticatedUser } from "../src/server/_lib/requireUser.js";
+import { upsertKycRecord } from "../src/server/_lib/kycRecords.js";
+
+export default async function handler(req, res) {
   const send = (status, body) => {
     res.setHeader("Cache-Control", "no-store");
     return res.status(status).json(body);
@@ -171,6 +174,22 @@
       });
     }
 
+    // Identity verification has to attach to a customer. Without this the
+    // inquiry's reference-id was a client-supplied string with no link to
+    // anyone, so an approved check could not be tied back to an account.
+    let user;
+    try {
+      user = await requireAuthenticatedUser(req);
+    } catch (authError) {
+      return send(authError.statusCode || 401, {
+        ok: false,
+        route: "kyc-start",
+        stage: "authentication",
+        error: authError.details?.reason || "authentication_required",
+        message: authError.message,
+      });
+    }
+
     if (req.method === "GET") {
       const inquiryId = pickFirstString(
         req.query?.inquiryId,
@@ -241,6 +260,25 @@
         attrs.updatedAt
       );
 
+      // Persist the outcome against the customer. Until now the only record
+      // that someone had verified was an inquiry id in their browser's local
+      // storage - clear site data and the verification was gone, with nothing
+      // server-side to show it had ever happened.
+      //
+      // A failed write must not block the sender: Persona remains the
+      // authoritative source, and this row is a durable convenience.
+      try {
+        await upsertKycRecord({
+          userId: user.id,
+          provider: "persona",
+          providerInquiryId: inquiryId,
+          status: normalized,
+          metadata: { decision: decision || null, completedAt: completedAt || null },
+        });
+      } catch (recordError) {
+        console.error(`[kyc-start] could not persist kyc record: ${recordError.message}`);
+      }
+
       const referenceId = pickFirstString(
         attrs["reference-id"],
         attrs.referenceId
@@ -301,9 +339,7 @@
       });
     }
 
-    const referenceId =
-      toStr(body.referenceId) ||
-      `nexaremit-kyc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const referenceId = user.id;
 
     const redirectBase = `${deriveOrigin()}/Setup`;
     const redirectUri = `${redirectBase}?kyc_return=1`;

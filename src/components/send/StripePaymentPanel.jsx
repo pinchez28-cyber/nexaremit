@@ -85,6 +85,7 @@ const KYC_ERROR_CODES = new Set([
   "kyc_declined",
   "kyc_inquiry_not_found",
   "kyc_unverifiable",
+  "kyc_mismatch",
   "kyc_provider_error",
   "kyc_provider_unreachable"
 ]);
