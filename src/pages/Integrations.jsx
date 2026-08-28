@@ -15,15 +15,6 @@ const serverEnvVars = [
   "SANCTIONS_PROVIDER_API_KEY",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
-  "SETTLEMENT_PROVIDER=xrpl-sandbox",
-  "XRPL_NETWORK=testnet",
-  "XRPL_RPC_URL",
-  "XRPL_WEBSOCKET_URL",
-  "XRPL_TREASURY_ADDRESS",
-  "XRPL_DESTINATION_ADDRESS",
-  "XRPL_ISSUER_ADDRESS",
-  "XRPL_ISSUED_CURRENCY=USD",
-  "XRPL_NETWORK_CHECK=false",
   "SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY"
 ];
@@ -34,9 +25,6 @@ const browserEnvVars = [
   "VITE_SANCTIONS_PROVIDER",
   "VITE_FUNDING_PROVIDER",
   "VITE_EXCHANGE_PROVIDER",
-  "VITE_SETTLEMENT_PROVIDER=xrpl-sandbox",
-  "VITE_XRPL_NETWORK=testnet",
-  "VITE_XRPL_ASSET=USD issued currency",
   "VITE_PAYOUT_PROVIDER",
   "VITE_STRIPE_PUBLISHABLE_KEY"
 ];
@@ -46,7 +34,7 @@ const productionPartners = [
   "Sanctions/AML screening such as ComplyAdvantage, Alloy, Sardine, or Unit21",
   "Funding provider such as Stripe, Adyen, Checkout.com, Plaid/ACH, or local bank rails",
   "FX/exchange or liquidity provider for rate locks and spread management",
-  "Settlement rail such as bank treasury, stablecoin rails, Ripple Payments, or XRPL integration",
+  "Payout rail through a licensed provider",
   "Payout partner such as Thunes, Nium, TerraPay, Flutterwave, MFS Africa, or bank/mobile money aggregators"
 ];
 
@@ -73,28 +61,6 @@ const kycReadiness = [
   }
 ];
 
-const xrplReadiness = [
-  {
-    title: "Network",
-    status: "Testnet first",
-    detail: "The backend adapter defaults to XRPL Testnet and can prepare settlement metadata without adding another Vercel function."
-  },
-  {
-    title: "Treasury address",
-    status: "Needed",
-    detail: "Add XRPL_TREASURY_ADDRESS only after deciding custody, signing controls, and who can approve ledger transactions."
-  },
-  {
-    title: "Issued currency",
-    status: "Needed for fiat rails",
-    detail: "For USD or other fiat-like settlement, configure issuer, trustlines, liquidity, and redemption before using mainnet."
-  },
-  {
-    title: "Signing",
-    status: "Not enabled",
-    detail: "NexaRemit currently prepares settlement drafts only. It does not submit or sign XRPL transactions."
-  }
-];
 
 export default function Integrations() {
   // Resolved at render time, never at import time, so a misconfigured
@@ -144,25 +110,6 @@ export default function Integrations() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-premium border-0">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Network className="w-5 h-5" /> XRPL Settlement Readiness</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-neutral-600">
-              XRPL is now represented in the backend settlement provider. It prepares a safe settlement plan for Testnet/Devnet and intentionally does not sign or submit ledger transactions yet.
-            </p>
-            <div className="integration-grid">
-              {xrplReadiness.map((item) => (
-                <div key={item.title} className="provider-mode-item">
-                  <span>{item.status}</span>
-                  <strong>{item.title}</strong>
-                  <p className="text-sm text-neutral-600">{item.detail}</p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
 
         <Card className="shadow-premium border-0">
           <CardHeader>

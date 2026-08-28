@@ -12,7 +12,6 @@ const BLOCKED_VALUE_PATTERNS = [
   /devnet\.rippletest\.net/i,
   /testnet\.honeycluster\.io/i,
   /devnet\.honeycluster\.io/i,
-  /testnet\.xrpl-labs\.com/i,
 ];
 
 function readRaw(envSource, name) {
@@ -126,23 +125,6 @@ export function getClientRuntimeEnv(importMetaEnv) {
       importMetaEnv,
       "VITE_STRIPE_PUBLISHABLE_KEY"
     ),
-    settlementProvider: requireEnum(importMetaEnv, "VITE_SETTLEMENT_PROVIDER", [
-      "xrpl-mainnet",
-    ]),
-    xrplNetwork: requireEnum(importMetaEnv, "VITE_XRPL_NETWORK", ["mainnet"]),
   });
 }
 
-export function getServerRuntimeEnv(nodeEnv) {
-  return Object.freeze({
-    settlementProvider: requireEnum(nodeEnv, "SETTLEMENT_PROVIDER", [
-      "xrpl-mainnet",
-    ]),
-    xrplNetwork: requireEnum(nodeEnv, "XRPL_NETWORK", ["mainnet"]),
-    xrplServerUrl: requireUrl(nodeEnv, "XRPL_SERVER_URL", ["wss:", "https:"]),
-    stripeSecretKey: requireLiveStripeSecretKey(
-      nodeEnv,
-      "STRIPE_SECRET_KEY"
-    ),
-  });
-}

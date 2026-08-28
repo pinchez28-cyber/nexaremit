@@ -13,32 +13,28 @@ function formatMoney(currency, amount) {
   return `${currency} ${numericAmount.toFixed(2)}`;
 }
 
-function formatNetwork(network) {
-  if (!network) return "";
-  return "XRPL";
-}
 
-function getStatusPresentation({ status, networkLabel, amountLabel, recipientName }) {
+function getStatusPresentation({ status, amountLabel, recipientName }) {
   switch (status) {
     case "confirmed":
       return {
         tone: "success",
         title: "Transfer Confirmed",
-        summary: `Your transfer for ${amountLabel} to ${recipientName} was confirmed${networkLabel ? ` through ${networkLabel} settlement` : ""}.`
+        summary: `Your transfer for ${amountLabel} to ${recipientName} was confirmed.`
       };
 
     case "submitted":
       return {
         tone: "success",
         title: "Transfer Submitted",
-        summary: `Your transfer for ${amountLabel} to ${recipientName} was submitted${networkLabel ? ` through ${networkLabel} settlement` : ""} and is awaiting final confirmation.`
+        summary: `Your transfer for ${amountLabel} to ${recipientName} was submitted and is awaiting final confirmation.`
       };
 
     case "funding_authorized":
       return {
         tone: "success",
         title: "Funding Authorized",
-        summary: `Funding is authorized for ${amountLabel}. Settlement is prepared${networkLabel ? ` through ${networkLabel}` : ""}.`
+        summary: `Funding is authorized for ${amountLabel}. Settlement is prepared.`
       };
 
     case "requires_payment_authorization":
@@ -52,7 +48,7 @@ function getStatusPresentation({ status, networkLabel, amountLabel, recipientNam
       return {
         tone: "warning",
         title: "Transfer Needs Attention",
-        summary: `Funding was collected for ${amountLabel}, but settlement could not be completed${networkLabel ? ` through ${networkLabel}` : ""}. Review the transfer details below.`
+        summary: `Funding was collected for ${amountLabel}, but settlement could not be completed. Review the transfer details below.`
       };
 
     case "blocked":
@@ -79,18 +75,15 @@ export default function TransferSuccess({ transferData, onDone }) {
   const result = transferData?.transferResult || {};
   const transfer = result?.transfer || {};
   const quote = result?.quote || transferData?.quote || {};
-  const settlement = quote?.providers?.settlement || null;
 
   const paymentIntentId = getPaymentIntentLabel(transferData?.paymentMethod);
   const paymentLabel = getPaymentMethodLabel(transferData?.paymentMethod);
   const amountLabel = formatMoney(transferData?.currency || quote?.currency, transferData?.amount || quote?.amount);
   const recipientName = transferData?.recipient?.name || "the selected recipient";
-  const networkLabel = formatNetwork(settlement?.network);
   const transferStatus = result?.status || transfer?.status || "created";
 
   const presentation = getStatusPresentation({
     status: transferStatus,
-    networkLabel,
     amountLabel,
     recipientName
   });
@@ -161,61 +154,6 @@ export default function TransferSuccess({ transferData, onDone }) {
               </div>
             </div>
 
-            {settlement && (
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                <h2 className="font-semibold text-primary mb-3">Settlement Details</h2>
-                <div className="grid gap-2 text-sm text-neutral-700">
-                  <div className="flex justify-between gap-4">
-                    <span className="text-neutral-500">Rail</span>
-                    <span className="font-medium text-right">{settlement.rail || "XRPL settlement adapter"}</span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-neutral-500">Network</span>
-                    <span className="font-medium text-right">{networkLabel || "XRPL"}</span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-neutral-500">Asset</span>
-                    <span className="font-medium text-right">{settlement.asset || "Not specified"}</span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-neutral-500">Settlement status</span>
-                    <span className="font-medium text-right">
-                      {(settlement.status || "unknown").replace(/_/g, " ")}
-                    </span>
-                  </div>
-                  {transfer.transactionHash && (
-                    <div className="flex justify-between gap-4">
-                      <span className="text-neutral-500">Transaction hash</span>
-                      <span className="font-medium text-right break-all">{transfer.transactionHash}</span>
-                    </div>
-                  )}
-                  {transfer.ledgerIndex && (
-                    <div className="flex justify-between gap-4">
-                      <span className="text-neutral-500">Ledger index</span>
-                      <span className="font-medium text-right">{transfer.ledgerIndex}</span>
-                    </div>
-                  )}
-                  {transfer.explorerUrl && (
-                    <div className="pt-2">
-                      <a
-                        href={transfer.explorerUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-blue-700 hover:underline font-medium"
-                      >
-                        View ledger details
-                      </a>
-                    </div>
-                  )}
-                  {settlement.note && (
-                    <p className="text-sm text-neutral-600 pt-2">{settlement.note}</p>
-                  )}
-                  {settlement.error && (
-                    <p className="text-sm text-red-700 pt-2">{settlement.error}</p>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="flex flex-col sm:flex-row justify-center gap-3">

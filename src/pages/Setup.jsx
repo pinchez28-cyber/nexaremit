@@ -1,6 +1,25 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 const RETURN_STORAGE_KEY = "nexaremit:persona:return";
+
+// kyc-start now binds the Persona inquiry to the signed-in customer, so both
+// calls have to carry the session.
+async function authHeaders(extra = {}) {
+  const client = getSupabaseBrowserClient();
+  let token = "";
+
+  if (client) {
+    try {
+      const { data } = await client.auth.getSession();
+      token = data?.session?.access_token || "";
+    } catch {
+      token = "";
+    }
+  }
+
+  return { ...extra, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+}
 
 function normalizeStatus(value) {
   return String(value || "")
@@ -114,9 +133,7 @@ export default function Setup() {
           `/api/kyc-start?inquiryId=${encodeURIComponent(inquiryId)}`,
           {
             method: "GET",
-            headers: {
-              Accept: "application/json",
-            },
+            headers: await authHeaders({ Accept: "application/json" }),
           }
         );
 
@@ -227,15 +244,13 @@ export default function Setup() {
         message: "Preparing identity check...",
       }));
 
-      const referenceId = `setup-${Date.now()}`;
-
       const res = await fetch("/api/kyc-start", {
         method: "POST",
-        headers: {
+        headers: await authHeaders({
           "Content-Type": "application/json",
           Accept: "application/json",
-        },
-        body: JSON.stringify({ referenceId }),
+        }),
+        body: JSON.stringify({}),
       });
 
       const data = await res.json().catch(() => ({}));

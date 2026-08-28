@@ -167,7 +167,7 @@ export default async function handler(req, res) {
   // Optional: only relevant when the recipient is a Stripe Connect account and
   // this platform performs a separate Connect transfer (see stripe-webhook.js).
   // The primary NexaRemit flow funds the platform here and settles the payout
-  // over XRPL, so this field is NOT required for a funding charge.
+  // directly, so this field is NOT required for a funding charge.
   const rawRecipientStripeAccountId = String(
     body.recipientStripeAccountId || body.recipient?.stripeAccountId || ""
   ).trim();
@@ -243,8 +243,13 @@ export default async function handler(req, res) {
   // never reach the card form with a live client secret. The browser only
   // supplies an inquiry ID; approval itself is confirmed server-side against
   // Persona (or the webhook-written kyc_records table).
+  // The user id is passed so the gate can confirm the approved inquiry was
+  // created for this account. The browser supplies the inquiry id, so without
+  // that check one leaked id would let someone else's verified identity
+  // authorise a transfer.
   const kyc = await verifyKycInquiry(
-    body.kycInquiryId || body.inquiryId || body.kyc?.inquiryId
+    body.kycInquiryId || body.inquiryId || body.kyc?.inquiryId,
+    user.id
   );
 
   if (!kyc.ok) {

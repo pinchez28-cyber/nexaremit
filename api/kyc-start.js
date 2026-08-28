@@ -1,4 +1,7 @@
-﻿export default async function handler(req, res) {
+﻿import { requireAuthenticatedUser } from "../src/server/_lib/requireUser.js";
+import { upsertKycRecord } from "../src/server/_lib/kycRecords.js";
+
+export default async function handler(req, res) {
   const send = (status, body) => {
     res.setHeader("Cache-Control", "no-store");
     return res.status(status).json(body);
@@ -103,8 +106,6 @@
 
   try {
     const TRANSFER_MODE = toStr(process.env.TRANSFER_MODE);
-    const XRPL_NETWORK = toStr(process.env.XRPL_NETWORK);
-    const SETTLEMENT_PROVIDER = toStr(process.env.SETTLEMENT_PROVIDER);
     const PERSONA_API_KEY = toStr(process.env.PERSONA_API_KEY);
     const PERSONA_TEMPLATE_ID = toStr(process.env.PERSONA_TEMPLATE_ID);
     const PERSONA_CREATE_INQUIRY_URL =
@@ -121,25 +122,7 @@
       });
     }
 
-    if (XRPL_NETWORK !== "mainnet") {
-      return send(500, {
-        ok: false,
-        route: "kyc-start",
-        stage: "env-validation",
-        error: "XRPL_NETWORK must be 'mainnet'.",
-        value: XRPL_NETWORK || null,
-      });
-    }
 
-    if (SETTLEMENT_PROVIDER && SETTLEMENT_PROVIDER !== "xrpl-mainnet") {
-      return send(500, {
-        ok: false,
-        route: "kyc-start",
-        stage: "env-validation",
-        error: "SETTLEMENT_PROVIDER must be 'xrpl-mainnet' in production.",
-        value: SETTLEMENT_PROVIDER,
-      });
-    }
 
     if (!PERSONA_API_KEY) {
       return send(500, {
@@ -188,6 +171,22 @@
         error:
           "PERSONA_CREATE_INQUIRY_URL must use api.withpersona.com, not withpersona.com.",
         value: PERSONA_CREATE_INQUIRY_URL,
+      });
+    }
+
+    // Identity verification has to attach to a customer. Without this the
+    // inquiry's reference-id was a client-supplied string with no link to
+    // anyone, so an approved check could not be tied back to an account.
+    let user;
+    try {
+      user = await requireAuthenticatedUser(req);
+    } catch (authError) {
+      return send(authError.statusCode || 401, {
+        ok: false,
+        route: "kyc-start",
+        stage: "authentication",
+        error: authError.details?.reason || "authentication_required",
+        message: authError.message,
       });
     }
 
@@ -261,6 +260,25 @@
         attrs.updatedAt
       );
 
+      // Persist the outcome against the customer. Until now the only record
+      // that someone had verified was an inquiry id in their browser's local
+      // storage - clear site data and the verification was gone, with nothing
+      // server-side to show it had ever happened.
+      //
+      // A failed write must not block the sender: Persona remains the
+      // authoritative source, and this row is a durable convenience.
+      try {
+        await upsertKycRecord({
+          userId: user.id,
+          provider: "persona",
+          providerInquiryId: inquiryId,
+          status: normalized,
+          metadata: { decision: decision || null, completedAt: completedAt || null },
+        });
+      } catch (recordError) {
+        console.error(`[kyc-start] could not persist kyc record: ${recordError.message}`);
+      }
+
       const referenceId = pickFirstString(
         attrs["reference-id"],
         attrs.referenceId
@@ -321,9 +339,7 @@
       });
     }
 
-    const referenceId =
-      toStr(body.referenceId) ||
-      `nexaremit-kyc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const referenceId = user.id;
 
     const redirectBase = `${deriveOrigin()}/Setup`;
     const redirectUri = `${redirectBase}?kyc_return=1`;
