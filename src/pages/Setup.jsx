@@ -1,5 +1,6 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { useAuth } from "@/lib/AuthContext";
 
 const RETURN_STORAGE_KEY = "nexaremit:persona:return";
 
@@ -85,6 +86,8 @@ function cleanupReturnParams() {
 }
 
 export default function Setup() {
+  const { isAuthenticated, isAuthConfigured } = useAuth();
+
   const pollRef = useRef(null);
   const closeTimerRef = useRef(null);
 
@@ -302,7 +305,9 @@ export default function Setup() {
         loading: false,
         stage: "create-error",
         error: err?.message || "Failed to start KYC.",
-        message: "KYC provider is not ready yet.",
+        message: /authentication_required|signed in/i.test(err?.message || "")
+          ? "Please sign in before starting identity verification."
+          : "Identity verification could not be started.",
       }));
     }
   }, [openPersona, startPolling]);
@@ -404,6 +409,32 @@ export default function Setup() {
       <p style={{ marginTop: 0, color: "#555" }}>
         Complete your identity verification before sending money.
       </p>
+
+      {/* Identity verification attaches to an account, so there is nothing
+          useful this page can do for a signed-out visitor. Say that plainly
+          rather than letting the request fail and reporting a provider error. */}
+      {isAuthConfigured && !isAuthenticated ? (
+        <div
+          style={{
+            border: "1px solid #fde68a",
+            borderRadius: 12,
+            padding: 20,
+            background: "#fffbeb",
+            color: "#92400e",
+            marginBottom: 20,
+          }}
+        >
+          <strong>Please sign in first.</strong>
+          <p style={{ margin: "8px 0 0" }}>
+            Identity verification is linked to your account, so you need to be
+            signed in before starting it.{" "}
+            <a href="/SignIn" style={{ fontWeight: 600, textDecoration: "underline", color: "inherit" }}>
+              Sign in
+            </a>
+            , then come back to this page.
+          </p>
+        </div>
+      ) : null}
 
       <div
         style={{
