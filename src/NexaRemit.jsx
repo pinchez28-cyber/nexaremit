@@ -19,6 +19,7 @@ import TransferHistory from "./pages/TransferHistory";
 import Receipt from "./pages/Receipt";
 import PaymentMethods from "./pages/PaymentMethods";
 import SignIn from "./pages/SignIn";
+import Account from "./pages/Account";
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -46,6 +47,7 @@ const AuthenticatedApp = () => {
         <Route path="/" element={<Home />} />
         <Route path="/Dashboard" element={<Dashboard />} />
         <Route path="/SignIn" element={<SignIn />} />
+        <Route path="/Account" element={<Account />} />
         <Route path="/Setup" element={<Setup />} />
         <Route path="/SendMoney" element={<SendMoney />} />
         <Route path="/PaymentMethods" element={<PaymentMethods />} />

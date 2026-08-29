@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Link, NavLink } from "react-router-dom";
 import { Bell, LockKeyhole, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import Logo from "@/components/branding/Logo";
@@ -19,6 +19,12 @@ const navItems = [
 
 export default function AppShell({ children }) {
   const { isAuthConfigured, isAuthenticated, signOut, user } = useAuth();
+
+  // The signed-in and signed-out states used to differ only by the direction of
+  // an arrow icon, which is not a difference anyone can see. Showing the
+  // account it belongs to makes "am I signed in?" answerable at a glance.
+  const accountLabel = user?.email || user?.phone || "Account";
+  const accountInitial = accountLabel.slice(0, 1).toUpperCase();
 
   return (
     <div className="app-shell">
@@ -52,18 +58,31 @@ export default function AppShell({ children }) {
 
             {isAuthConfigured &&
               (isAuthenticated ? (
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={signOut}
-                  aria-label={`Sign out ${user?.email || user?.phone || ""}`}
-                  title={user?.email || user?.phone || "Sign out"}
-                >
-                  <LogOut className="w-5 h-5" />
-                </button>
+                <div className="header-account">
+                  <Link
+                    to="/Account"
+                    className="header-account-chip"
+                    title={`Signed in as ${accountLabel}`}
+                  >
+                    <span className="header-account-avatar" aria-hidden="true">
+                      {accountInitial}
+                    </span>
+                    <span className="header-account-email">{accountLabel}</span>
+                  </Link>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={signOut}
+                    aria-label="Sign out"
+                    title="Sign out"
+                  >
+                    <LogOut className="w-5 h-5" />
+                  </button>
+                </div>
               ) : (
-                <Link to="/SignIn" className="icon-button" aria-label="Sign in">
-                  <LogIn className="w-5 h-5" />
+                <Link to="/SignIn" className="header-signin">
+                  <LogIn className="w-4 h-4" />
+                  <span>Sign in</span>
                 </Link>
               ))}
           </div>

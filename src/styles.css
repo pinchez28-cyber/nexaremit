@@ -352,6 +352,72 @@ a:focus-visible {
   color: var(--brand-ink);
 }
 
+/* Signed in vs signed out has to be legible without inspecting an icon. */
+.header-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.header-account-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.5rem;
+  max-width: 12rem;
+  padding: 0 0.75rem 0 0.375rem;
+  border: 1px solid #e5e5e5;
+  border-radius: 9999px;
+  background: #fff;
+  color: var(--brand-ink);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.header-account-chip:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.header-account-avatar {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--brand-ink);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.header-account-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-signin {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.5rem;
+  padding: 0 1rem;
+  border-radius: 9999px;
+  background: var(--brand-ink);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.header-signin:hover {
+  opacity: 0.9;
+}
+
 .hero-kicker {
   color: #d1fae5;
   font-size: 0.875rem;
@@ -1584,8 +1650,18 @@ a:focus-visible {
 }
 
 @media (max-width: 640px) {
-  .header-actions {
+  .header-actions .header-trust,
+  .header-actions > button[aria-label="Notifications"] {
     display: none;
+  }
+
+  .header-account-email {
+    display: none;
+  }
+
+  .header-account-chip {
+    max-width: none;
+    padding: 0.25rem;
   }
 
   .brand-mark {

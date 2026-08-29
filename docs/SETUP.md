@@ -146,6 +146,23 @@ can, so a package can import cleanly here and still fail once deployed.
 
 ---
 
+## Account closure
+
+`DELETE /api/account` closes an account: it deletes saved recipients, removes
+the email from the funding list, and deletes the Supabase auth user. It refuses
+while any payout is still `awaiting_provider` or `pending`.
+
+It deliberately does **not** delete transfer records, payout records, the KYC
+result, or the audit trail. 31 CFR 1010.410 requires an MSB to retain records
+of the money it moved for five years, and those rows key off `user_id` as plain
+text with no foreign key into `auth.users`, so they survive the deletion
+intact. The page at `/Account` states this to the customer before they confirm.
+
+A closure writes `account.closed` to `transfer_audit_logs` **before** anything
+is deleted. If that write fails the request is refused and nothing is removed.
+
+---
+
 ## What is still missing
 
 - **Payout.** No provider is connected, so no transfer completes end to end.
