@@ -20,6 +20,8 @@ import Receipt from "./pages/Receipt";
 import PaymentMethods from "./pages/PaymentMethods";
 import SignIn from "./pages/SignIn";
 import Account from "./pages/Account";
+import Terms from "./pages/Terms";
+import Privacy from "./pages/Privacy";
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -48,6 +50,8 @@ const AuthenticatedApp = () => {
         <Route path="/Dashboard" element={<Dashboard />} />
         <Route path="/SignIn" element={<SignIn />} />
         <Route path="/Account" element={<Account />} />
+        <Route path="/Terms" element={<Terms />} />
+        <Route path="/Privacy" element={<Privacy />} />
         <Route path="/Setup" element={<Setup />} />
         <Route path="/SendMoney" element={<SendMoney />} />
         <Route path="/PaymentMethods" element={<PaymentMethods />} />

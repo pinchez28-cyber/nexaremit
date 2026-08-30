@@ -352,6 +352,20 @@ a:focus-visible {
   color: var(--brand-ink);
 }
 
+/* Legal links have to be reachable from every page: a privacy policy nobody
+   can find is not a published privacy policy. */
+.footer-links {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.footer-links a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 /* Signed in vs signed out has to be legible without inspecting an icon. */
 .header-account {
   display: inline-flex;

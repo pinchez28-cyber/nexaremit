@@ -97,7 +97,11 @@ export default function AppShell({ children }) {
             <LockKeyhole className="w-5 h-5" />
             <span>Designed for regulated money movement and secure cross-border transfers.</span>
           </div>
-          <span>NexaRemit</span>
+          <nav className="footer-links" aria-label="Legal">
+            <Link to="/Terms">Terms of Service</Link>
+            <Link to="/Privacy">Privacy Policy</Link>
+            <span>NexaRemit</span>
+          </nav>
         </div>
       </footer>
     </div>
