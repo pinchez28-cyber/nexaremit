@@ -132,54 +132,13 @@ async function verifyWithDatabase(inquiryId) {
 }
 
 /**
- * An approved inquiry is only proof of identity for the person it was created
- * for.
- *
- * Persona carries that link in reference-id, which kyc-start now sets to the
- * authenticated user. Without this check any approved inquiry id would clear
- * the gate for any signed-in caller - the browser supplies the id, so one
- * leaked or shared id would let someone else's verified identity authorise a
- * transfer.
- */
-function assertBelongsTo(result, expectedUserId) {
-  const expected = String(expectedUserId || "").trim();
-
-  // Nothing to compare against: callers that pass no user get the old
-  // behaviour rather than a silent pass on a check that never ran.
-  if (!expected) return result;
-  if (!result.ok) return result;
-
-  const owner = String(result.referenceId || "").trim();
-
-  if (!owner) {
-    return {
-      ok: false,
-      code: "kyc_unverifiable",
-      message:
-        "This identity check cannot be matched to your account. Please start verification again.",
-    };
-  }
-
-  if (owner !== expected) {
-    return {
-      ok: false,
-      code: "kyc_mismatch",
-      message:
-        "This identity check belongs to a different account. Please complete verification on this account.",
-    };
-  }
-
-  return result;
-}
-
-/**
  * Verify that the supplied Persona inquiry represents a completed, approved
  * identity check.
  *
  * Returns { ok: true, ... } or { ok: false, code, message, ... }.
  * Fails closed: if verification cannot be performed, access is denied.
  */
-export async function verifyKycInquiry(inquiryId, expectedUserId = "") {
+export async function verifyKycInquiry(inquiryId) {
   if (!isKycRequired()) {
     return { ok: true, source: "disabled", skipped: true };
   }
@@ -197,11 +156,11 @@ export async function verifyKycInquiry(inquiryId, expectedUserId = "") {
 
   // Persona is the authoritative source when it is configured.
   const personaResult = await verifyWithPersona(id);
-  if (personaResult) return assertBelongsTo(personaResult, expectedUserId);
+  if (personaResult) return personaResult;
 
   // Otherwise fall back to the record written by the signed Persona webhook.
   const databaseResult = await verifyWithDatabase(id);
-  if (databaseResult) return assertBelongsTo(databaseResult, expectedUserId);
+  if (databaseResult) return databaseResult;
 
   // Neither source available: fail closed rather than let money move
   // unverified. Set NEXA_REQUIRE_KYC=false if this is intentional.
