@@ -1,6 +1,3 @@
-import { priceTransfer, DEFAULT_PRICING } from "./pricing.js";
-import { majorToMinor } from "./money.js";
-
 export const corridorRates = {
   USD: { NGN: 1650, KES: 129, GHS: 12.1, INR: 83.2, PHP: 57.5, MXN: 17.1, BRL: 5.1, PKR: 278, BDT: 117, ZAR: 18.2, EGP: 48.5, MAD: 10.0 },
   CAD: { NGN: 1210, KES: 94.5, GHS: 8.9, INR: 61.0, PHP: 42.1, MXN: 12.5, BRL: 3.75, PKR: 204, BDT: 86, ZAR: 13.3, EGP: 35.5, MAD: 7.3 },
@@ -26,20 +23,9 @@ export function calculateTransferQuote({ amount = 0, currency = "USD", recipient
     Number(liveRate) > 0
       ? Number(liveRate)
       : corridorRates[currency]?.[receiveCurrency] || recipient?.exchangeRate || 1;
-  // Priced by the same module the server charges with. This previously used
-  // max($2.99, 1.2%), which bore no relation to what create-payment-intent
-  // actually billed - a $1,500 transfer quoted an $18 fee and charged $52.31.
-  const priced = priceTransfer({
-    sendAmountMinor: majorToMinor(numericAmount, currency),
-    currency,
-    rate,
-    receiveCurrency,
-    config: DEFAULT_PRICING,
-  });
-
-  const fee = priced.fee;
-  const total = priced.total;
-  const receivedAmount = priced.receiveAmount;
+  const fee = numericAmount > 0 ? Math.max(2.99, numericAmount * 0.012) : 0;
+  const total = numericAmount + fee;
+  const receivedAmount = numericAmount * rate;
   const transferLimit = recipient?.limit || 2500;
   const isOverLimit = numericAmount > transferLimit;
 
@@ -49,14 +35,6 @@ export function calculateTransferQuote({ amount = 0, currency = "USD", recipient
     total,
     receivedAmount,
     receiveCurrency,
-    // The breakdown behind the single fee figure, so the review step can show
-    // what the customer is paying for rather than one opaque number.
-    breakdown: {
-      platformFee: priced.platformFeeMinor / 100,
-      fxMarkup: priced.fxMarkupMinor / 100,
-      payoutCost: priced.payoutCostMinor / 100,
-      cardProcessing: priced.stripeFeeMinor / 100
-    },
     deliveryEstimate: recipient?.deliveryEstimate || "Within 1 business day",
     transferLimit,
     isOverLimit
