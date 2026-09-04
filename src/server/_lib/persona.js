@@ -1,4 +1,4 @@
-const PERSONA_INQUIRIES_URL = "https://api.withpersona.com/api/v1/inquiries";
+import { PERSONA_INQUIRIES_URL } from "./persona-endpoints.js";
 
 export function isPersonaConfigured() {
   return Boolean(process.env.PERSONA_API_KEY && process.env.PERSONA_TEMPLATE_ID);

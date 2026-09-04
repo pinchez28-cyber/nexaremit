@@ -26,8 +26,14 @@ function requireSupabase() {
  * constraint is the guard; this turns a duplicate into a no-op that returns
  * the existing row.
  */
-export async function recordFundedPayout(input) {
-  const supabase = requireSupabase();
+export async function recordFundedPayout(input, deps = {}) {
+  // Dependency injection for tests: a fake Supabase client can be supplied so
+  // idempotency is verified with no network and no export monkey-patching.
+  const getSupabase = deps.getSupabaseAdminClient || getSupabaseAdminClient;
+  const supabase = getSupabase();
+  if (!supabase) {
+    throw new Error("[payout] Supabase is not configured; payouts cannot be recorded.");
+  }
 
   const row = {
     transfer_id: String(input.transferId),

@@ -47,17 +47,21 @@ export function runTransferSafetyChecks({ user, amount, currency, recipient, quo
         "Sanctions screening is not configured; allowed by NEXA_ALLOW_UNSCREENED. Not valid for real transfers."
       );
     } else {
-      failures.push("Sanctions screening must be clear before transfer creation.");
+      failures.push(
+        `Sanctions screening must be clear before transfer creation (sanctions status: ${sanctions?.status ?? "unknown"}).`
+      );
     }
   }
   if (risk?.status === "blocked") failures.push("Fraud risk check blocked this transfer.");
   if (risk?.status === "manual_review") warnings.push("Fraud risk check requires manual review before release.");
   if (risk?.status === "not_configured") warnings.push("Fraud risk scoring is not configured on this deployment.");
   if (!recipient?.name) failures.push("Recipient is required.");
-  if (!allowedCorridors.has(corridor)) failures.push(`Corridor ${corridor} is not enabled.`);
+  if (!allowedCorridors.has(corridor)) failures.push(`Transfer corridor ${corridor} is not enabled.`);
   if (!numericAmount || numericAmount <= 0) failures.push("Transfer amount must be greater than zero.");
   if (numericAmount > transferLimit) failures.push(`Transfer exceeds recipient limit of ${currency} ${transferLimit}.`);
-  if (numericAmount > 1000) warnings.push("Enhanced due diligence may be required for larger transfers.");
+  // >= 1000, not > 1000: a transfer of exactly the EDD threshold is itself a
+  // larger transfer and must be flagged like one.
+  if (numericAmount >= 1000) warnings.push("Enhanced due diligence may be required for larger transfers.");
   // Velocity. A per-recipient cap can be cleared repeatedly, or spread across
   // several recipients, without tripping anything - so these look at what the
   // customer has already committed in the trailing windows, including this

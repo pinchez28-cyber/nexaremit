@@ -8,8 +8,8 @@
 
 import { getSupabaseAdminClient } from "./supabaseClient.js";
 import { normalizeKycStatus } from "./kycRecords.js";
+import { personaInquiryUrl } from "./persona-endpoints.js";
 
-const PERSONA_INQUIRY_URL = "https://withpersona.com/api/v1/inquiries";
 const PERSONA_VERSION = "2023-01-05";
 
 // Persona inquiry states that mean "identity check finished successfully".
@@ -34,17 +34,14 @@ async function verifyWithPersona(inquiryId) {
 
   let response;
   try {
-    response = await fetch(
-      `${PERSONA_INQUIRY_URL}/${encodeURIComponent(inquiryId)}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${process.env.PERSONA_API_KEY}`,
-          Accept: "application/json",
-          "Persona-Version": PERSONA_VERSION,
-        },
-      }
-    );
+    response = await fetch(personaInquiryUrl(inquiryId), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${process.env.PERSONA_API_KEY}`,
+        Accept: "application/json",
+        "Persona-Version": PERSONA_VERSION,
+      },
+    });
   } catch (error) {
     return {
       ok: false,
