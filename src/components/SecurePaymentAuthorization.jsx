@@ -6,6 +6,8 @@ import {
   useElements,
   useStripe,
 } from "@stripe/react-stripe-js";
+import { minorUnitsPerMajor } from "@/lib/money";
+import { useAuth } from "@/lib/AuthContext";
 
 const STRIPE_PUBLISHABLE_KEY = (
   import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || ""
@@ -18,10 +20,14 @@ const stripePromise =
 
 function formatMoneyFromCents(cents, currency = "usd") {
   if (!Number.isFinite(Number(cents))) return "-";
+  // P1-3: cents is the minor-unit number of THIS currency. Convert with the
+  // ISO 4217 exponent instead of a hard-coded /100, so JPY and 3-decimal
+  // currencies display correctly.
+  const minorPerMajor = minorUnitsPerMajor(currency);
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: (currency || "usd").toUpperCase(),
-  }).format(Number(cents) / 100);
+  }).format(Number(cents) / minorPerMajor);
 }
 
 function getPaymentIntentErrorMessage(payload) {
@@ -196,6 +202,7 @@ export default function SecurePaymentAuthorization({
   transferData,
   onAuthorized,
 }) {
+  const { getAccessToken } = useAuth();
   const [clientSecret, setClientSecret] = useState("");
   const [quote, setQuote] = useState(null);
   const [status, setStatus] = useState("idle");
@@ -228,11 +235,23 @@ export default function SecurePaymentAuthorization({
       setStatus("loading");
       setErrorText("");
 
+      const token = await getAccessToken();
+      if (!token) {
+        if (active) {
+          setErrorText(
+            "You must be signed in before authorizing a payment. Sign in and retry."
+          );
+          setStatus("error");
+        }
+        return;
+      }
+
       try {
         const response = await fetch("/api/create-payment-intent", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(transferData),
         });

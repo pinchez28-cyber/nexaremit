@@ -70,8 +70,12 @@ export function getVelocityLimits(envSource = process.env) {
  * Returns amounts in major units to match safetyEngine, which compares against
  * recipient limits expressed the same way.
  */
-export async function getVelocityUsage(user, { currency, now = Date.now() } = {}) {
-  const supabase = getSupabaseAdminClient();
+export async function getVelocityUsage(user, { currency, now = Date.now() } = {}, deps = {}) {
+  // Dependency injection keeps this pure-testable: tests pass a fake Supabase
+  // client here instead of monkey-patching module exports (ESM live bindings
+  // cannot be patched) and without any network access.
+  const getSupabase = deps.getSupabaseAdminClient || getSupabaseAdminClient;
+  const supabase = getSupabase();
 
   if (!supabase) {
     return { available: false, dailyAmount: 0, monthlyAmount: 0, dailyCount: 0 };

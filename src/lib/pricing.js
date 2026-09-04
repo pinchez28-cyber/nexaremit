@@ -193,4 +193,22 @@ export function totalCostPercent(quote) {
   return (quote.feeMinor / quote.sendAmountMinor) * 100;
 }
 
+/**
+ * ISO 4217 currency-aware conversion of a minor-unit amount into the minor
+ * units of a *recipient* currency (P1-3).
+ *
+ * The recipient amount is expressed in the recipient currency: a USD sender
+ * whose quote says the recipient gets NGN 2,575,000 sends `recipientAmountMinor`
+ * in NGN minor units. Converting that with a hard-coded /100 was fine for NGN
+ * (2 decimals) but wrong for 3-decimal (BHD, KWD, ...) and wrong for
+ * zero-decimal (JPY) receive currencies. `numMinorUnits` is the recipient
+ * currency's ISO 4217 exponent; the round-trip math stays exact integer
+ * arithmetic and returns the recipient minor units unchanged.
+ */
+export function convertRecipientAmountMinor(recipientAmountMajor, receiveCurrency, numMinorUnits = 100) {
+  const major = Number(recipientAmountMajor);
+  if (!Number.isFinite(major) || major <= 0) return 0;
+  return Math.round(major * numMinorUnits);
+}
+
 export { majorToMinor, minorToMajor };

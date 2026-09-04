@@ -72,3 +72,33 @@ export async function requireAuthenticatedUser(req) {
 
   return user;
 }
+
+/**
+ * Dependency-injectable form of requireAuthenticatedUser for tests and for
+ * routes that want to control enough of the wiring to prove — with mocked
+ * Supabase — that no Stripe call happens before authentication succeeds.
+ */
+export async function requireAuthenticatedUserWithDeps(req, deps = {}) {
+  const {
+    getSupabaseAdmin = getSupabaseAdminClient,
+    getUser = getAuthenticatedUser,
+  } = deps;
+
+  if (!getSupabaseAdmin()) {
+    throw createHttpError(
+      503,
+      "Authentication is unavailable because Supabase is not configured on this deployment.",
+      { reason: "supabase_not_configured" }
+    );
+  }
+
+  const user = await getUser(req);
+
+  if (!user || !user.id) {
+    throw createHttpError(401, "You must be signed in to do this.", {
+      reason: "authentication_required",
+    });
+  }
+
+  return user;
+}

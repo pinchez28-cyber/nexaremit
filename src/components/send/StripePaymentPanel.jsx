@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { isStripeConfigured, stripePromise } from "@/lib/stripe";
 import { AlertTriangle, CreditCard, ShieldCheck } from "lucide-react";
+import { minorUnitsPerMajor } from "@/lib/money";
+import { useAuth } from "@/lib/AuthContext";
 
 function CheckoutForm({ onAuthorized }) {
   const stripe = useStripe();
@@ -84,25 +86,38 @@ const KYC_ERROR_CODES = new Set([
 ]);
 
 export default function StripePaymentPanel({ transferData, onAuthorized }) {
+  const { getAccessToken, isAuthenticated } = useAuth();
   const [clientSecret, setClientSecret] = useState("");
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
   const [needsKyc, setNeedsKyc] = useState(false);
 
-  // The API expects the SEND amount in minor units (cents) and adds platform,
-  // FX and processing fees on top. Sending major units here would undercharge
-  // by 100x, so the conversion is explicit rather than passing transferData raw.
+  // P1-3: the API expects the SEND amount in MINOR units of the send currency.
+  // transferData.quote.amount is in MAJOR units (what the sender types in).
+  // Hard-coding /100 was wrong for JPY (no minor unit) and 3-decimal
+  // currencies; minorUnitsPerMajor() carries the ISO 4217 exponent.
   const sendAmountMajor = Number(
     transferData?.quote?.amount ?? transferData?.amount ?? 0
   );
-  const amountMinor = Math.round(sendAmountMajor * 100);
   const currency = String(transferData?.currency || "usd").toLowerCase();
+  const amountMinor = Math.round(
+    sendAmountMajor * minorUnitsPerMajor(currency)
+  );
   const transferId = transferData?.transferId || "";
   const recipientCurrency = String(
     transferData?.quote?.receiveCurrency || currency
   ).toLowerCase();
+  // The recipient amount from the local quote is in the RECIPIENT currency's
+  // major units (e.g. NGN 2,575,000). Convert it to that currency's minor
+  // units (kobo) with the ISO 4217 exponent so a BHD or JPY receive currency
+  // is handled correctly, not with a hard-coded /100.
+  const receivedAmountMajor = Number(
+    transferData?.quote?.receivedAmount ||
+    transferData?.quote?.receivedAmountMajor ||
+    0
+  );
   const recipientAmountMinor = Math.round(
-    Number(transferData?.quote?.receivedAmount || 0) * 100
+    receivedAmountMajor * minorUnitsPerMajor(recipientCurrency)
   );
 
   useEffect(() => {
@@ -124,11 +139,32 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
       setNeedsKyc(false);
 
       try {
+        // P0-1: the money path now authenticates FIRST. The bearer token from
+        // the Supabase session is required; the server refuses unauthenticated
+        // callers before it ever touches KYC or Stripe.
+        const token = await getAccessToken();
+        if (!token) {
+          if (isMounted) {
+            setStatus("error");
+            setError(
+              "You must be signed in before authorizing a payment. Return to the dashboard and sign in."
+            );
+          }
+          return;
+        }
+
         const response = await fetch("/api/create-payment-intent", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
           body: JSON.stringify({
-            amount: amountMinor,
+            // Send the major-unit amount explicitly: the server converts it
+            // with the currency's ISO 4217 exponent. amountMinor is still
+            // emitted for backward compatibility.
+            amountMajor: sendAmountMajor,
+            amountMinor: amountMinor,
             currency,
             transferId,
             referenceId: transferId,
@@ -142,6 +178,17 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
         });
 
         const payload = await response.json();
+
+        if (response.status === 401) {
+          if (isMounted) {
+            setStatus("error");
+            setError(
+              payload?.message ||
+                "Your session has expired. Sign in again and retry the authorization."
+            );
+          }
+          return;
+        }
 
         if (!response.ok) {
           if (isMounted && KYC_ERROR_CODES.has(payload?.error)) {
@@ -162,7 +209,7 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
       }
     }
 
-    createIntent();
+    if (isAuthenticated) createIntent();
 
     return () => {
       isMounted = false;
@@ -174,7 +221,9 @@ export default function StripePaymentPanel({ transferData, onAuthorized }) {
     currency,
     transferId,
     recipientCurrency,
-    recipientAmountMinor
+    recipientAmountMinor,
+    sendAmountMajor,
+    isAuthenticated
   ]);
 
   if (!isStripeConfigured) {
