@@ -9,6 +9,8 @@ import ReviewTransfer from "../components/send/ReviewTransfer";
 import TransferSuccess from "../components/send/TransferSuccess";
 import { calculateTransferQuote } from "@/lib/transfer-pricing";
 import { getRate, refreshRates, FX_TTL_MS } from "@/lib/fx-rates";
+import { requestTransferQuote, submitTransferRequest, createIdempotencyKey } from "@/lib/transfer-api";
+import { useAuth } from "@/lib/AuthContext";
 
 const STEPS = {
   RECIPIENT: "recipient",
@@ -37,9 +39,12 @@ const STEP_TITLES = {
 const QUOTE_TTL_MS = 10 * 60 * 1000;
 
 export default function SendMoney() {
+  const { getAccessToken } = useAuth();
   const [currentStep, setCurrentStep] = useState(STEPS.RECIPIENT);
   const [quoteStatus, setQuoteStatus] = useState("idle");
   const [quoteError, setQuoteError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [transferError, setTransferError] = useState(null);
 
   // A stable id for this transfer attempt. It is used as the Stripe
   // idempotency key, so it must NOT be regenerated on every render —
@@ -108,10 +113,11 @@ export default function SendMoney() {
     );
   }, []);
 
-  // Build the quote, then advance to the payment step.
-  // Pricing is computed locally; the authoritative charge amount (including
-  // fees) is recomputed server-side in /api/create-payment-intent.
-  const requestQuote = useCallback(() => {
+  // Build the quote SERVER-SIDE via /api/quotes, then advance to the payment
+  // step. Batch 2: the quote is an immutable server snapshot; the browser only
+  // supplies the validated choice (recipient + amount + currencies). Pricing is
+  // NEVER computed locally as authoritative.
+  const requestQuote = useCallback(async () => {
     setQuoteError(null);
 
     const amount = Number(transferData.amount);
@@ -125,36 +131,38 @@ export default function SendMoney() {
     setQuoteStatus("loading");
 
     try {
-      const priced = calculateTransferQuote({
-        amount,
-        currency: transferData.currency,
-        recipient: transferData.recipient,
-        rate: fx?.rate,
-      });
-
-      if (priced.isOverLimit) {
+      const token = await getAccessToken();
+      if (!token) {
         setQuoteStatus("error");
-        setQuoteError(
-          new Error(
-            `This recipient's limit is ${transferData.currency} ${priced.transferLimit.toLocaleString()} per transfer.`
-          )
-        );
+        setQuoteError(new Error("You must be signed in before requesting a transfer quote."));
         return;
       }
 
+      const payload = await requestTransferQuote({
+        recipientId: transferData.recipient?.id || transferData.recipient?.recipientId,
+        sendCurrency: transferData.currency,
+        receiveCurrency: transferData.recipient?.receiveCurrency,
+        sendAmountMajor: amount,
+      });
+
+      const serverQuote = payload?.quote;
+
       const quote = {
-        id: `q-${transferIdRef.current}`,
+        id: serverQuote?.id,
         amount,
         currency: transferData.currency,
-        rate: priced.rate,
-        fee: priced.fee,
-        total: priced.total,
-        receivedAmount: priced.receivedAmount,
-        receiveCurrency: priced.receiveCurrency,
-        deliveryEstimate: priced.deliveryEstimate,
+        rate: serverQuote?.fxRate,
+        fee: serverQuote?.fees
+          ? (serverQuote.fees.platformFeeMinor + serverQuote.fees.stripeFeeMinor) / 100
+          : 0,
+        total: serverQuote?.totalChargeMajor,
+        receivedAmount: serverQuote?.receiveAmountMajor,
+        receiveCurrency: serverQuote?.receiveCurrency,
+        deliveryEstimate: null,
         rateSource: fx?.source || "fallback",
         rateFetchedAt: fx?.fetchedAt || null,
-        expiresAt: new Date(Date.now() + QUOTE_TTL_MS).toISOString(),
+        serverQuoteId: serverQuote?.id,
+        expiresAt: serverQuote?.expiresAt,
       };
 
       updateTransferData({ quote });
@@ -169,9 +177,40 @@ export default function SendMoney() {
     transferData.currency,
     transferData.recipient,
     fx,
+    getAccessToken,
     updateTransferData,
     goToStep,
   ]);
+
+  // Submit the transfer SERVER-SIDE (/api/transfers). The transfer status is
+  // server-owned: the browser sends quoteId + idempotency key only, and the UI
+  // renders exactly what the server returns. There is no local success path.
+  const handleSubmitTransfer = useCallback(async () => {
+    setTransferError(null);
+    setSubmitting(true);
+
+    const quote = transferData.quote;
+    if (!quote?.serverQuoteId) {
+      setTransferError(new Error("This quote has no server id. Go back and request a fresh quote."));
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const result = await submitTransferRequest({
+        quoteId: quote.serverQuoteId,
+        paymentMethod: transferData.paymentMethod,
+        purpose: transferData.purpose,
+        idempotencyKey: createIdempotencyKey(),
+      });
+      updateTransferData({ transferResult: result });
+      goToStep(STEPS.SUCCESS);
+    } catch (error) {
+      setTransferError(error);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [transferData.quote, transferData.paymentMethod, transferData.purpose, updateTransferData, goToStep]);
 
   const progress = useMemo(
     () => ((STEP_ORDER.indexOf(currentStep) + 1) / STEP_ORDER.length) * 100,
@@ -237,9 +276,9 @@ export default function SendMoney() {
         return (
           <ReviewTransfer
             transferData={transferData}
-            transferStatus="idle"
-            transferError={null}
-            onConfirm={() => goToStep(STEPS.SUCCESS)}
+            transferStatus={submitting ? "submitting" : "idle"}
+            transferError={transferError}
+            onConfirm={handleSubmitTransfer}
             onBack={previousStep}
           />
         );
@@ -247,7 +286,13 @@ export default function SendMoney() {
       case STEPS.SUCCESS:
         return (
           <TransferSuccess
-            transferData={transferData}
+            transferData={{
+              ...transferData,
+              transferResult: {
+                transfer: transferData.transferResult?.transfer || null,
+                quote: transferData.quote,
+              },
+            }}
             onDone={() => {
               transferIdRef.current = `nexa-${Date.now()}-${Math.random()
                 .toString(36)
@@ -260,6 +305,7 @@ export default function SendMoney() {
                 purpose: "family_support",
                 quote: null,
                 transferId: transferIdRef.current,
+                transferResult: null,
               });
               setQuoteStatus("idle");
               setQuoteError(null);
