@@ -59,12 +59,11 @@ export async function submitTransferRequest({ quoteId, paymentMethod, purpose, a
       "Idempotency-Key": idempotencyKey
     },
     body: JSON.stringify({
+      // Server-owned (Batch 2): ids + idempotency key only. Amounts, fees,
+      // rates and recipient money fields are NEVER accepted from the client —
+      // the server reads them from the stored quote.
       quoteId,
-      paymentMethod,
-      purpose,
-      amount,
-      currency,
-      recipient
+      idempotencyKey
     })
   });
 
