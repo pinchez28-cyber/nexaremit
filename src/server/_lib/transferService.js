@@ -440,6 +440,118 @@ export async function cancelTransfer({ user, transferId, store }) {
 }
 
 /**
+ * Server-computed receipt for a transfer (P0-6).
+ *
+ * The receipt is derived entirely from the STORED quote + transfer rows — never
+ * from client math, and never from a locally-crafted record. The receipt total
+ * is the server-owned `expected_charge_minor` (which was copied exactly from
+ * `quote.total_charge_minor` at transfer creation, and which the webhook also
+ * requires the PaymentIntent to match). Exact minor-unit equality across
+ * quote/charge/receipt is therefore structural: all three read the same anchor.
+ *
+ * `quote` may be the stored quote row. When the store cannot join the quote
+ * (unconfigured DB / missing row) the receipt is built from the transfer's own
+ * immutable anchors and `quoteJoined` reflects that — the totals still equal
+ * the charged amount because `expected_charge_minor` IS the quote total.
+ */
+export function buildServerReceipt({ transfer, quote = null }) {
+  if (!transfer) return null;
+  const sendCurrency = String(transfer.send_currency || "USD").toUpperCase();
+  const receiveCurrency = String(transfer.receive_currency || "").toUpperCase();
+  const totalChargeMinor = Number(transfer.expected_charge_minor ?? 0);
+
+  // Quote-derived breakdown (all minor units of the send currency). The stored
+  // quote is the source of truth; the transfer row's anchors are the fallback.
+  const feeBreakdown = {
+    platformFeeMinor: Number(
+      quote?.platform_fee_minor ?? quote?.platform_fixed_minor ?? 0
+    ),
+    fxMarkupMinor: Number(quote?.fx_markup_minor ?? 0),
+    payoutCostMinor: Number(
+      quote?.payout_cost_minor ?? quote?.payout_fixed_minor ?? 0
+    ),
+    complianceBufferMinor: Number(quote?.compliance_buffer_minor ?? 0),
+    stripeFeeMinor: Number(quote?.stripe_fee_minor ?? 0),
+  };
+
+  const quoteTotal =
+    quote?.total_charge_minor != null ? Number(quote.total_charge_minor) : null;
+
+  return {
+    id: `RCP-${String(transfer.id || "").replace(/^tr_/, "")}`,
+    transferId: transfer.id,
+    quoteId: transfer.quote_id || quote?.id || null,
+    status: transfer.status,
+    recipientName: transfer.recipient_name || "Recipient",
+    destination: transfer.destination || "",
+    sendCurrency,
+    sendAmountMajor: Number(transfer.send_amount || 0),
+    sendAmountMinor: Number(transfer.send_amount_minor ?? 0),
+    receiveCurrency,
+    receiveAmountMajor: Number(transfer.receive_amount || 0),
+    receiveAmountMinor: Number(transfer.receive_amount_minor ?? 0),
+    expectedChargeMinor: totalChargeMinor,
+    chargedMinor:
+      Number(transfer.payment_intent_amount_minor ?? totalChargeMinor) ||
+      totalChargeMinor,
+    // P0-6: receipt total == charged total, exact minor equality with the
+    // quote anchor. quoteTotal is null when the quote row is unavailable; the
+    // transfer anchor IS the quote total so equality still holds structurally.
+    totalChargeMinor: totalChargeMinor,
+    quoteTotalMinor: quoteTotal,
+    quoteMatchesTransfer:
+      quoteTotal === null || quoteTotal === totalChargeMinor,
+    feeBreakdown,
+    feesMinor: Object.values(feeBreakdown).reduce((a, b) => a + b, 0),
+    paymentMethod: transfer.payment_method || "card",
+    paymentIntentId: transfer.payment_intent_id || null,
+    paymentIntentAmountMinor:
+      transfer.payment_intent_amount_minor == null
+        ? null
+        : Number(transfer.payment_intent_amount_minor),
+    fundedAt: transfer.funded_at || null,
+    createdAt: transfer.created_at,
+  };
+}
+
+/**
+ * Load a transfer's receipt for its owner. Auth is handled by the caller (the
+ * route resolves the user first). Cross-user reads are 404 — no oracle.
+ */
+export async function getTransferReceiptForUser({ user, transferId, store }) {
+  requireStore(store);
+  const id = normalizeId(transferId);
+  if (!id) throw createHttpError(404, "Transfer not found.", { code: "not_found" });
+
+  const found = await store.getTransferById(id);
+  if (found?.error) {
+    throw createHttpError(503, "Could not read the transfer. Please try again.", {
+      reason: "db_error",
+    });
+  }
+  if (!found?.data || String(found.data.user_id) !== String(user.id)) {
+    // 404 (not 403) so one customer cannot enumerate another's transfer ids.
+    throw createHttpError(404, "Transfer not found.", { code: "not_found" });
+  }
+
+  // Join the stored quote when the store can read it (best-effort — the
+  // transfer anchors are authoritative either way).
+  let quote = null;
+  if (store.getQuoteById && found.data.quote_id) {
+    try {
+      const quoted = await store.getQuoteById(found.data.quote_id);
+      if (quoted?.data && String(quoted.data.user_id) === String(user.id)) {
+        quote = quoted.data;
+      }
+    } catch {
+      quote = null;
+    }
+  }
+
+  return buildServerReceipt({ transfer: found.data, quote });
+}
+
+/**
  * Server-owned status shape for the API. All money fields come from the stored
  * row (immutable quote anchors), never from the client.
  */
@@ -476,6 +588,8 @@ export default {
   listTransfersForUser,
   cancelTransfer,
   transitionTransferStatus,
+  getTransferReceiptForUser,
+  buildServerReceipt,
   runFullTransferGates,
   parseTransferSubmitBody,
   buildTransferRow,
