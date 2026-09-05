@@ -186,3 +186,96 @@ create index if not exists payouts_user_created_idx
   on public.payouts (user_id, created_at desc);
 
 alter table public.payouts enable row level security;
+
+-- ============================================================
+-- Batch 2 (sandbox-only, owner-approved): server-owned lifecycle
+--   quote -> transfer -> Stripe TEST funding -> webhook reconcile
+--   -> funded -> payout obligation (awaiting_provider, PENDING).
+--
+-- ADDITIVE ONLY: one new table + ADD COLUMNs + indexes. No FKs added
+-- anywhere (consistent with the no-FK design); no existing column is
+-- altered or dropped; `payouts` is unchanged. Migration is written but NOT
+-- applied anywhere live — it targets the sandbox Supabase dev database.
+-- ============================================================
+
+-- Immutable server snapshot of a priced quote. Once issued, amount/fee/rate
+-- columns never change; only status + consumed_at mutate (issued -> consumed
+-- | expired | cancelled). Single-use + expiry are enforced server-side at the
+-- point of consumption with a conditional UPDATE (see quoteService.js).
+create table if not exists public.quotes (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  status text not null default 'issued',
+  recipient_id uuid,
+  send_currency text not null,
+  send_amount_major numeric(18, 2) not null default 0,
+  send_amount_minor bigint not null default 0,
+  receive_currency text not null,
+  receive_amount_major numeric(18, 2) not null default 0,
+  receive_amount_minor bigint not null default 0,
+  fx_rate numeric(18, 6),
+  platform_fixed_minor bigint not null default 0,
+  platform_percent_minor bigint not null default 0,
+  fx_markup_minor bigint not null default 0,
+  payout_fixed_minor bigint not null default 0,
+  payout_percent_minor bigint not null default 0,
+  compliance_buffer_minor bigint not null default 0,
+  stripe_fee_minor bigint not null default 0,
+  total_charge_minor bigint not null default 0,
+  expires_at timestamptz not null default now() + interval '15 minutes',
+  created_at timestamptz not null default now(),
+  consumed_at timestamptz,
+  idempotency_key text
+);
+
+create unique index if not exists quotes_idempotency_key_uidx
+  on public.quotes (idempotency_key) where idempotency_key is not null;
+
+create index if not exists quotes_user_created_idx
+  on public.quotes (user_id, created_at desc);
+
+create index if not exists quotes_status_expires_idx
+  on public.quotes (status, expires_at);
+
+alter table public.quotes enable row level security;
+-- RLS enabled with no policies (deny-by-default, like every other table):
+-- the browser can never read/write quotes directly; all access flows through
+-- the serverless API routes with SUPABASE_SERVICE_ROLE_KEY.
+
+-- Transfer lifecycle anchors. Existing major-unit display columns are kept;
+-- the new minor-unit bigint columns are canonical on the money path.
+alter table public.transfer_records
+  add column if not exists quote_id uuid;
+alter table public.transfer_records
+  add column if not exists expected_charge_minor bigint;
+alter table public.transfer_records
+  add column if not exists payment_intent_amount_minor bigint;
+alter table public.transfer_records
+  add column if not exists idempotency_key text;
+alter table public.transfer_records
+  add column if not exists funded_at timestamptz;
+alter table public.transfer_records
+  add column if not exists last_webhook_event_id text;
+
+-- Duplicate-funding guard: one PaymentIntent funds at most one transfer.
+create unique index if not exists transfer_records_payment_intent_uidx
+  on public.transfer_records (payment_intent_id)
+  where payment_intent_id is not null;
+
+-- Duplicate-submit replay: same idempotency key returns the same transfer.
+create unique index if not exists transfer_records_idempotency_key_uidx
+  on public.transfer_records (idempotency_key)
+  where idempotency_key is not null;
+
+create index if not exists transfer_records_quote_idx
+  on public.transfer_records (quote_id) where quote_id is not null;
+
+-- Server-owned transfer status values (Batch 2 state machine):
+--   pending_funding -> funded -> payout_pending (obligation awaiting_provider;
+--     terminal in Batch 2: "Funding received — payout pending", never success)
+--   pending_funding -> cancelled (user, only while pending_funding)
+--   pending_funding -> expired (quote expired before funding)
+--   pending_funding -> reconciliation_failed (webhook amount/currency
+--     mismatch; NO obligation created)
+-- Reserved (not reachable until a payout provider exists): payout_submitted,
+-- paid, payout_failed, refunded.
