@@ -30,6 +30,7 @@ import {
   getTransferForUser,
   listTransfersForUser,
   cancelTransfer,
+  getTransferReceiptForUser,
 } from "../src/server/_lib/transferService.js";
 import { runPretransferGates } from "../src/server/_lib/transferGates.js";
 
@@ -163,6 +164,19 @@ export default async function handler(req, res) {
       method === "POST" && !pathAction ? getJsonBody(req) : {};
 
     if (method === "GET" && pathId) {
+      // P0-6: /api/transfers/:id?action=receipt returns the SERVER-computed
+      // receipt (derived from the stored quote/transfer — never client math).
+      // The receipt total equals the charged total (exact minor equality).
+      const action = String(req.query?.action || "").trim();
+      if (action === "receipt") {
+        const receipt = await getTransferReceiptForUser({
+          user,
+          transferId: parseTransferId(pathId),
+          store,
+        });
+        return sendJson(res, 200, { ok: true, receipt });
+      }
+
       const transfer = await getTransferForUser({
         user,
         transferId: parseTransferId(pathId),
