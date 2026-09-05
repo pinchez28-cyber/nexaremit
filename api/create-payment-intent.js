@@ -9,6 +9,43 @@ import { createRequire } from "node:module";
 import { requireAuthenticatedUser } from "../src/server/_lib/requireUser.js";
 import { verifyKycInquiry } from "../src/server/_lib/kycGate.js";
 import { createPaymentIntentHandler } from "../src/server/_lib/createPaymentIntentHandler.js";
+import { getSupabaseAdminClient } from "../src/server/_lib/supabaseClient.js";
+
+// Batch 2: the funding route is bound to the server-owned transfer. The store
+// adapter reads the transfer/quote and persists the PI id + amount at creation
+// so the webhook reconciles against server-recorded values only.
+function makeTransferStore() {
+  const supabase = getSupabaseAdminClient();
+  if (!supabase) return null;
+  return {
+    async getTransferById(id) {
+      const { data, error } = await supabase
+        .from("transfer_records")
+        .select("*")
+        .eq("id", String(id))
+        .maybeSingle();
+      return { data, error };
+    },
+    async getQuoteById(id) {
+      const { data, error } = await supabase
+        .from("quotes")
+        .select("*")
+        .eq("id", String(id))
+        .maybeSingle();
+      return { data, error };
+    },
+    async bindPaymentIntent({ id, paymentIntentId, paymentIntentAmountMinor }) {
+      const { error } = await supabase
+        .from("transfer_records")
+        .update({
+          payment_intent_id: String(paymentIntentId),
+          payment_intent_amount_minor: Number(paymentIntentAmountMinor),
+        })
+        .eq("id", String(id));
+      return { ok: !error, error };
+    },
+  };
+}
 
 // Stripe is created lazily inside getStripe so a missing/invalid key returns
 // a clean JSON error instead of crashing the function at module load (which
@@ -32,4 +69,5 @@ export default createPaymentIntentHandler({
   getStripeImpl: getStripe,
   requireAuthenticatedUser,
   verifyKyc: verifyKycInquiry,
+  transferStore: makeTransferStore(),
 });

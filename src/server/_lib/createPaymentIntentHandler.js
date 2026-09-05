@@ -312,6 +312,55 @@ export function createPaymentIntentHandler(deps = {}) {
       });
     }
 
+    // ---- Funding joins the transfer (Batch 2, additive) ------------------
+    // When the request names a transfer, the charge amount is rebuilt from the
+    // STORED quote — never from a client amount. Validation: transfer owned +
+    // pending_funding + quote single-use anchor intact. The legacy path
+    // (no transferId) keeps the direct amount flow for backwards-compatible
+    // tests and non-lifecycle usage.
+    let boundTransfer = null;
+    let boundQuote = null;
+    const rawTransferId = String(body.transferId || body.transfer_id || "").trim();
+    if (deps.transferStore && rawTransferId) {
+      const found = await deps.transferStore.getTransferById(rawTransferId);
+      if (found?.error) {
+        return sendJson(res, 503, {
+          ok: false,
+          route: "create-payment-intent",
+          stage: "transfer-lookup",
+          error: "Could not read the transfer. Please try again.",
+        });
+      }
+      const transferRow = found?.data;
+      if (!transferRow || String(transferRow.user_id) !== String(user.id)) {
+        return sendJson(res, 404, {
+          ok: false,
+          route: "create-payment-intent",
+          stage: "transfer-lookup",
+          error: "Transfer not found.",
+        });
+      }
+      if (String(transferRow.status) !== "pending_funding") {
+        return sendJson(res, 409, {
+          ok: false,
+          route: "create-payment-intent",
+          stage: "transfer-state",
+          error: `This transfer is not awaiting funding (state: ${transferRow.status}).`,
+        });
+      }
+      const quoteLookup = await deps.transferStore.getQuoteById(transferRow.quote_id);
+      if (quoteLookup?.error || !quoteLookup?.data) {
+        return sendJson(res, 503, {
+          ok: false,
+          route: "create-payment-intent",
+          stage: "quote-lookup",
+          error: "Could not read the stored quote for this transfer.",
+        });
+      }
+      boundQuote = quoteLookup.data;
+      boundTransfer = transferRow;
+    }
+
     const quote = quoteBuilder(sendAmountMinor, unitPerMajorFor(currency)) || buildQuote(sendAmountMinor, unitPerMajorFor(currency));
 
     const recipientAmountMinor = Number(
@@ -343,6 +392,14 @@ export function createPaymentIntentHandler(deps = {}) {
       kycVerifiedBy: String(kyc.source || ""),
       kycStatus: String(kyc.status || (kyc.skipped ? "not_required" : "")),
     };
+
+    // Bound transfers carry the exact reconciliation anchors in metadata.
+    if (boundTransfer) {
+      metadata.quoteId = String(boundTransfer.quote_id || "");
+      metadata.expectedChargeMinor = String(
+        boundTransfer.expected_charge_minor ?? boundQuote?.total_charge_minor ?? 0
+      );
+    }
 
     // Only attach Connect-transfer metadata when a recipient account is present.
     // Without it the webhook treats the charge as funding-only and does not
@@ -405,10 +462,33 @@ export function createPaymentIntentHandler(deps = {}) {
         : { payment_method_types: paymentMethodTypes }),
     };
 
+    // Stripe idempotency is bound to the transfer when one is named, so the
+    // same transfer can never create two PaymentIntents (pi-{transferId}).
+    const idempotencyKey = boundTransfer
+      ? `pi-${transferId}`
+      : `pi-${referenceId}`;
+
     try {
       const paymentIntent = await stripe.paymentIntents.create(createParams, {
-        idempotencyKey: `pi-${referenceId}`,
+        idempotencyKey,
       });
+
+      // Server-store PI id + amount at CREATION time (Batch 2 invariant: the
+      // webhook reconciles against what the server recorded, never the client).
+      if (boundTransfer && deps.transferStore?.bindPaymentIntent) {
+        const stored = await deps.transferStore.bindPaymentIntent({
+          id: boundTransfer.id,
+          paymentIntentId: paymentIntent.id,
+          paymentIntentAmountMinor: paymentIntent.amount,
+        });
+        if (!stored?.ok) {
+          console.error(
+            `[create-payment-intent] could not persist PI binding for ${boundTransfer.id}: ${
+              stored?.error || "write failed"
+            }`
+          );
+        }
+      }
 
       return sendJson(res, 200, {
         ok: true,
