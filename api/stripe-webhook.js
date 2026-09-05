@@ -1,5 +1,7 @@
 import Stripe from "stripe";
 import { recordFundedPayout } from "../src/server/_lib/payoutRecords.js";
+import { getSupabaseAdminClient } from "../src/server/_lib/supabaseClient.js";
+import { reconcileFundingWebhook } from "../src/server/_lib/webhookReconciliation.js";
 
 export const config = {
   api: {
@@ -34,8 +36,95 @@ function json(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+// Store adapter for the reconciliation service: reads the transfer by the
+// SERVER-stored PI id (never the client's), applies conditional status
+// transitions, and idempotently records the payout obligation.
+function makeReconciliationStore(supabase) {
+  return {
+    async getTransferByPaymentIntentId(piId) {
+      const { data, error } = await supabase
+        .from("transfer_records")
+        .select("*")
+        .eq("payment_intent_id", String(piId))
+        .maybeSingle();
+      return { data, error };
+    },
+    async updateTransferStatus({ id, fromStatus, toStatus, patch }) {
+      const { data, error } = await supabase
+        .from("transfer_records")
+        .update({ status: toStatus, ...patch })
+        .eq("id", String(id))
+        .eq("status", fromStatus)
+        .select("*")
+        .maybeSingle();
+      return { data, error };
+    },
+    async recordPayout({ transfer, nowIso }) {
+      const res = await recordFundedPayout(
+        {
+          transferId: transfer.id,
+          userId: transfer.user_id,
+          recipientId: transfer.quote_recipient_id || null,
+          recipientName: transfer.recipient_name || "Unknown recipient",
+          corridor: transfer.corridor || "",
+          payoutMethod: "card",
+          destinationMasked: null,
+          sendAmountMinor: Number(transfer.expected_charge_minor || 0),
+          sendCurrency: transfer.send_currency || "USD",
+          receiveAmountMinor: Number(transfer.receive_amount_minor || 0),
+          receiveCurrency: transfer.receive_currency || "",
+          quotedRate: null,
+          metadata: { paymentIntentId: transfer.payment_intent_id, fundedAt: nowIso },
+        },
+        { getSupabaseAdminClient: () => supabase }
+      );
+      return res;
+    },
+  };
+}
+
 async function handlePaymentIntentSucceeded(stripe, paymentIntent) {
   const currentIntent = await stripe.paymentIntents.retrieve(paymentIntent.id);
+
+  // Batch 2: reconcile against the server-owned transfer. Signature-verified
+  // payment_intent.succeeded -> exact-minor match -> funded + payout
+  // obligation; mismatch -> reconciliation_failed with NO obligation. This is
+  // the ONLY path that advances funding state (webhook-only trust).
+  const supabase = getSupabaseAdminClient();
+  if (supabase) {
+    const reconciles = await reconcileFundingWebhook({
+      store: makeReconciliationStore(supabase),
+      paymentIntent: currentIntent,
+      eventId: currentIntent.metadata?.lastWebhookEventId || currentIntent.id,
+    });
+    if (reconciles.ok) {
+      return {
+        reconciliation: true,
+        paymentIntentId: currentIntent.id,
+        transferId: reconciles.transferId,
+        status: "funded",
+        payoutStatus: reconciles.payoutStatus,
+      };
+    }
+    if (reconciles.reason === "transfer_not_found") {
+      // No transfer is bound to this PI. Fall through to the legacy
+      // funding-only acknowledgement (never fabricates funding).
+      console.log(
+        `[stripe-webhook] no server-owned transfer for PI ${currentIntent.id}; acknowledging`
+      );
+    } else {
+      console.log(
+        `[stripe-webhook] reconciliation did not fund ${currentIntent.id}: ${reconciles.reason}`
+      );
+      return {
+        reconciliation: true,
+        paymentIntentId: currentIntent.id,
+        funded: false,
+        reason: reconciles.reason,
+        reconciliationFailed: reconciles.reconciliationFailed || false,
+      };
+    }
+  }
 
   if (currentIntent.metadata?.recipientTransferId) {
     return {
