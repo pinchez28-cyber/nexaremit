@@ -1,36 +1,39 @@
-import { calculateSandboxQuote } from "@/lib/transfer-pricing";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-import { getPaymentIntentLabel, getPaymentMethodLabel } from "@/lib/payment-labels";
+// src/lib/transfer-records.js
+//
+// Batch 2 (UI honesty): this module is now READ-ONLY and server-owned.
+//
+// Previously it crafted local "sandbox" transfer records — inventing an id
+// (NX-...), a status (payment_authorized / sandbox_complete), a timeline, and
+// then persisted them to localStorage and POSTed them to /api/transfer-records.
+// That fabricated a successful transfer from a locally-priced quote, so a
+// sender could see "Payment authorized" and a receipt with no server transfer
+// behind it, and the record vanished with site data.
+//
+// Now: no local record is created, no status is invented, and nothing is
+// written to localStorage. Transfer status is owned by the server (/api/transfers
+// and /api/transfers/:id?action=receipt). Reads fail closed to empty arrays —
+// never to a fabricated local history. The honest terminal state is
+// "Funding received — payout pending" (never success/paid).
 
-const STORAGE_KEY = "nexaremit_sandbox_transfers";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+
 const DEVICE_KEY = "nexaremit:device-id";
 
-// Scopes server-side records to this browser. There is no login yet, so this
-// is the only thing separating one visitor's history from another's — it is
-// deliberately not a security boundary. See api/transfer-records.js.
+// Scopes server-side reads to this browser. There is no login yet, so this is
+// deliberately not a security boundary — the server prefers the access token.
 function getDeviceId() {
-  if (!canUseStorage()) return "";
-
+  if (typeof window === "undefined" || !window.localStorage) return "";
   let id = window.localStorage.getItem(DEVICE_KEY);
-
   if (!id) {
     id =
       typeof crypto !== "undefined" && crypto.randomUUID
         ? crypto.randomUUID()
-        : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
-            (
-              c ^
-              (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))
-            ).toString(16)
-          );
+        : `dev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     window.localStorage.setItem(DEVICE_KEY, id);
   }
-
   return id;
 }
 
-// Read straight from the live session rather than through React, because this
-// module is imported by plain functions as well as components.
 async function getAccessToken() {
   const client = getSupabaseBrowserClient();
   if (!client) return "";
@@ -42,162 +45,127 @@ async function getAccessToken() {
   }
 }
 
-// The device id is still sent so a sender who has not signed in yet keeps the
-// history they built before. Once signed in the server prefers the token and
-// ignores it.
 async function recordsRequestInit(extra = {}) {
   const deviceId = getDeviceId();
   const accessToken = await getAccessToken();
-
   return {
     ...extra,
     headers: {
       ...(extra.headers || {}),
       "x-nexa-device-id": deviceId,
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
-    }
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
   };
 }
 
+// Server-owned status vocabulary. payout_pending is the honest terminal state
+// for Batch 2: funding received, recipient owed, no payout provider yet.
+// There is deliberately NO success/paid/completed label here.
 export const transferStatuses = {
-  payment_authorized: "Payment authorized",
-  compliance_review: "Compliance review",
-  payout_pending: "Payout pending",
-  payout_unavailable: "Not delivered - no payout provider",
-  sandbox_complete: "Sandbox complete",
+  pending_funding: "Funding authorized — awaiting confirmation",
+  funded: "Funding received — payout pending",
+  payout_pending: "Funding received — payout pending",
+  cancelled: "Cancelled",
+  expired: "Expired",
+  reconciliation_failed: "Reconciliation failed — review required",
+  payout_unavailable: "Not delivered — no payout provider",
   failed: "Failed",
   refunded: "Refunded"
 };
 
 // No seeded history. This previously injected an invented completed transfer
-// into every new browser's local storage, which then appeared in the dashboard
-// and history as though the sender had used the product before.
-const starterTransfers = [];
+// into every new browser's local storage.
+const EMPTY_RECORDS = [];
 
-function canUseStorage() {
-  return typeof window !== "undefined" && window.localStorage;
-}
-
-function storeTransferRecords(records) {
-  if (!canUseStorage()) return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records.slice(0, 50)));
-}
-
+// The local record path is GONE. getTransferRecords returns nothing locally —
+// history lives only on the server.
 export function getTransferRecords() {
-  if (!canUseStorage()) return starterTransfers;
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (!stored) {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(starterTransfers));
-    return starterTransfers;
-  }
+  return EMPTY_RECORDS;
+}
+
+export function getTransferRecord() {
+  return null;
+}
+
+// Server-owned read: fetch transfer history from /api/transfers (the server
+// — never a local store). Fails closed to an empty list.
+export async function fetchTransferRecords() {
   try {
-    return JSON.parse(stored);
+    const response = await fetch("/api/transfers", await recordsRequestInit());
+    if (!response.ok) return EMPTY_RECORDS;
+    const result = await response.json();
+    const transfers = Array.isArray(result?.transfers) ? result.transfers : [];
+    return transfers.map((transfer) => toTransferRecord(transfer));
   } catch {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(starterTransfers));
-    return starterTransfers;
+    return EMPTY_RECORDS;
   }
 }
 
-export function getTransferRecord(id) {
-  return getTransferRecords().find((record) => record.id === id);
+// Server-owned read: fetch one transfer's receipt from
+// /api/transfers/:id?action=receipt (server-computed from the stored
+// quote/transfer — never client math). Fails closed to null.
+export async function fetchTransferRecord(id) {
+  try {
+    const response = await fetch(
+      `/api/transfers/${encodeURIComponent(id)}?action=receipt`,
+      await recordsRequestInit()
+    );
+    if (!response.ok) return null;
+    const result = await response.json();
+    if (!result?.receipt) return null;
+    return toRecordFromReceipt(result.receipt, id);
+  } catch {
+    return null;
+  }
 }
 
-export function buildTransferRecord(transferData) {
-  // Use the quote the sender actually saw and accepted. Recomputing it here
-  // silently dropped the live rate - a $200 transfer to India was quoted at
-  // 95.43 and recorded at 83.20, understating the recipient amount by 13%.
-  const quote = transferData.quote || calculateSandboxQuote(transferData);
-  const paymentIntentId = getPaymentIntentLabel(transferData.paymentMethod);
-  const hasPayment = Boolean(paymentIntentId);
+// Map a server-owned transfer (toClientTransfer shape) to the display shape
+// the history/receipt pages render. All money/status is server-owned.
+function toTransferRecord(transfer) {
+  const quote = transfer?.metadata?.quote || {};
   return {
-    id: `NX-${Date.now().toString().slice(-8)}`,
-    createdAt: new Date().toISOString(),
-    recipientName: transferData.recipient?.name || "Unknown receiver",
-    destination: `${transferData.recipient?.country || "Unknown"} - ${transferData.recipient?.method || "Payout"}`,
-    sendAmount: Number(transferData.amount || 0),
-    sendCurrency: transferData.currency,
-    receiveAmount: quote.receivedAmount,
-    receiveCurrency: quote.receiveCurrency,
-    paymentMethod: getPaymentMethodLabel(transferData.paymentMethod),
-    paymentIntentId,
-    status: hasPayment ? "payment_authorized" : "sandbox_complete",
+    id: transfer.id,
+    createdAt: transfer.createdAt,
+    recipientName: transfer.recipientName || "Recipient",
+    destination: transfer.destination || "",
+    sendAmount: Number(transfer.sendAmountMajor || 0),
+    sendCurrency: transfer.sendCurrency || "USD",
+    receiveAmount: Number(transfer.receiveAmountMajor || 0),
+    receiveCurrency: transfer.receiveCurrency || "",
+    paymentMethod: transfer.paymentMethod || "card",
+    paymentIntentId: transfer.paymentIntentId || null,
+    status: transfer.status || "pending_funding",
+    totalChargeMinor: transfer.expectedChargeMinor || quote.totalChargeMinor || 0,
     events: [
-      { label: "Quote created", at: new Date(Date.now() - 90_000).toISOString() },
-      { label: hasPayment ? "Card authorized in Stripe test mode" : "Transfer recorded", at: new Date().toISOString() },
-      { label: "Not delivered - no payout provider is connected", at: new Date().toISOString() }
-    ]
+      { label: "Transfer created", at: transfer.createdAt },
+      ...(transfer.fundedAt
+        ? [{ label: "Funding received — payout pending", at: transfer.fundedAt }]
+        : []),
+    ],
   };
 }
 
-export function saveTransferRecord(transferDataOrRecord) {
-  const record = transferDataOrRecord?.recipient
-    ? buildTransferRecord(transferDataOrRecord)
-    : transferDataOrRecord;
-
-  if (!record) return null;
-  if (canUseStorage()) {
-    const records = getTransferRecords();
-    const withoutDuplicate = records.filter((item) => item.id !== record.id);
-    storeTransferRecords([record, ...withoutDuplicate]);
-  }
-
-  return record;
-}
-
-export async function fetchTransferRecords() {
-  const localRecords = getTransferRecords();
-  try {
-    const response = await fetch("/api/transfer-records", await recordsRequestInit());
-    if (!response.ok) throw new Error("Could not load transfer records");
-    const result = await response.json();
-    if (!result.configured) return localRecords;
-    storeTransferRecords(result.records);
-    return result.records;
-  } catch {
-    return localRecords;
-  }
-}
-
-export async function fetchTransferRecord(id) {
-  const localRecord = getTransferRecord(id);
-  try {
-    const response = await fetch(
-      `/api/transfer-records?id=${encodeURIComponent(id)}`,
-      await recordsRequestInit()
-    );
-    if (!response.ok) throw new Error("Could not load transfer receipt");
-    const result = await response.json();
-    if (!result.configured) return localRecord;
-    if (result.record) saveTransferRecord(result.record);
-    return result.record || localRecord;
-  } catch {
-    return localRecord;
-  }
-}
-
-export async function persistTransferRecord(transferDataOrRecord) {
-  const record = transferDataOrRecord?.recipient
-    ? buildTransferRecord(transferDataOrRecord)
-    : transferDataOrRecord;
-  saveTransferRecord(record);
-
-  try {
-    const response = await fetch(
-      "/api/transfer-records",
-      await recordsRequestInit({
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ record })
-      })
-    );
-    if (!response.ok) throw new Error("Could not save transfer record");
-    const result = await response.json();
-    const savedRecord = result.record || record;
-    saveTransferRecord(savedRecord);
-    return savedRecord;
-  } catch {
-    return record;
-  }
+function toRecordFromReceipt(receipt, id) {
+  return {
+    id: receipt.transferId || id,
+    createdAt: receipt.createdAt,
+    recipientName: receipt.recipientName || "Recipient",
+    destination: receipt.destination || "",
+    sendAmount: Number(receipt.sendAmountMajor || 0),
+    sendCurrency: receipt.sendCurrency || "USD",
+    receiveAmount: Number(receipt.receiveAmountMajor || 0),
+    receiveCurrency: receipt.receiveCurrency || "",
+    paymentMethod: receipt.paymentMethod || "card",
+    paymentIntentId: receipt.paymentIntentId || null,
+    status: receipt.status || "pending_funding",
+    totalChargeMinor: Number(receipt.totalChargeMinor || 0),
+    events: [
+      { label: "Transfer created", at: receipt.createdAt },
+      ...(receipt.fundedAt
+        ? [{ label: "Funding received — payout pending", at: receipt.fundedAt }]
+        : []),
+    ],
+  };
 }
 
 export function formatTransferDate(dateValue) {
@@ -205,6 +173,6 @@ export function formatTransferDate(dateValue) {
     month: "short",
     day: "numeric",
     hour: "numeric",
-    minute: "2-digit"
+    minute: "2-digit",
   }).format(new Date(dateValue));
 }
