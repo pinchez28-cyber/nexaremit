@@ -106,72 +106,62 @@ export default async function handler(req, res) {
 
   try {
     const TRANSFER_MODE = toStr(process.env.TRANSFER_MODE);
+    const isProductionMode = String(TRANSFER_MODE || "sandbox")
+      .trim()
+      .toLowerCase() === "production";
     const PERSONA_API_KEY = toStr(process.env.PERSONA_API_KEY);
     const PERSONA_TEMPLATE_ID = toStr(process.env.PERSONA_TEMPLATE_ID);
     const PERSONA_CREATE_INQUIRY_URL =
       toStr(process.env.PERSONA_CREATE_INQUIRY_URL) ||
       "https://api.withpersona.com/api/v1/inquiries";
 
-    if (TRANSFER_MODE !== "production") {
-      return send(500, {
+    // Sandbox loop fix (Batch 2): the Start-KYC action must be exercisable in
+    // sandbox mode with sandbox Persona keys. Previously the gate demanded
+    // TRANSFER_MODE=production AND rejected any sandbox-looking key, so the
+    // sandbox could never start an inquiry.
+    //
+    //   sandbox (TRANSFER_MODE != production):
+    //     accepted when Persona keys are configured; sandbox-looking keys are
+    //     expected and allowed. When unconfigured, the action is unavailable
+    //     (503 fail-closed — the equivalent of hiding the button).
+    //   production:
+    //     strict — real (non-sandbox) Persona keys on the api.withpersona.com
+    //     host only; a sandbox-looking key or wrong host is refused.
+    if (!PERSONA_API_KEY || !PERSONA_TEMPLATE_ID) {
+      return send(503, {
         ok: false,
         route: "kyc-start",
         stage: "env-validation",
-        error: "TRANSFER_MODE must be 'production'.",
-        value: TRANSFER_MODE || null,
+        error: "Start-KYC is unavailable because Persona is not configured.",
+        mode: isProductionMode ? "production" : "sandbox",
       });
     }
 
+    if (isProductionMode) {
+      if (looksSandbox(PERSONA_API_KEY)) {
+        return send(500, {
+          ok: false,
+          route: "kyc-start",
+          stage: "env-validation",
+          error: "Unsafe value in environment variable: PERSONA_API_KEY (sandbox key in production mode).",
+          mode: "production",
+        });
+      }
 
-
-    if (!PERSONA_API_KEY) {
-      return send(500, {
-        ok: false,
-        route: "kyc-start",
-        stage: "env-validation",
-        error: "Missing PERSONA_API_KEY.",
-      });
-    }
-
-    if (!PERSONA_TEMPLATE_ID) {
-      return send(500, {
-        ok: false,
-        route: "kyc-start",
-        stage: "env-validation",
-        error: "Missing PERSONA_TEMPLATE_ID.",
-      });
-    }
-
-    if (!PERSONA_CREATE_INQUIRY_URL) {
-      return send(500, {
-        ok: false,
-        route: "kyc-start",
-        stage: "env-validation",
-        error: "Missing PERSONA_CREATE_INQUIRY_URL.",
-      });
-    }
-
-    if (looksSandbox(PERSONA_API_KEY)) {
-      return send(500, {
-        ok: false,
-        route: "kyc-start",
-        stage: "env-validation",
-        error: "Unsafe value in environment variable: PERSONA_API_KEY.",
-      });
-    }
-
-    if (
-      /withpersona\.com\/api\/v1\/inquiries/i.test(PERSONA_CREATE_INQUIRY_URL) &&
-      !/api\.withpersona\.com/i.test(PERSONA_CREATE_INQUIRY_URL)
-    ) {
-      return send(500, {
-        ok: false,
-        route: "kyc-start",
-        stage: "env-validation",
-        error:
-          "PERSONA_CREATE_INQUIRY_URL must use api.withpersona.com, not withpersona.com.",
-        value: PERSONA_CREATE_INQUIRY_URL,
-      });
+      if (
+        /withpersona\.com\/api\/v1\/inquiries/i.test(PERSONA_CREATE_INQUIRY_URL) &&
+        !/api\.withpersona\.com/i.test(PERSONA_CREATE_INQUIRY_URL)
+      ) {
+        return send(500, {
+          ok: false,
+          route: "kyc-start",
+          stage: "env-validation",
+          error:
+            "PERSONA_CREATE_INQUIRY_URL must use api.withpersona.com, not withpersona.com.",
+          value: PERSONA_CREATE_INQUIRY_URL,
+          mode: "production",
+        });
+      }
     }
 
     // Identity verification has to attach to a customer. Without this the
