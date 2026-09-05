@@ -1,19 +1,22 @@
-﻿import React from "react";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { getPaymentIntentLabel, getPaymentMethodLabel } from "@/lib/payment-labels";
-import { AlertTriangle, CheckCircle, Landmark, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Landmark, ShieldCheck } from "lucide-react";
 
+// Batch 2 (UI honesty): status is SERVER-OWNED only. The review step shows the
+// server's quote/transfer state and never claims a transfer was "confirmed" or
+// "submitted" as a terminal success. The honest terminal language is
+// "Funding received — payout pending".
 const statusLabels = {
-  configuration_required: "Configuration required",
-  prepared: "Prepared",
-  funding_authorized: "Funding authorized",
-  requires_payment_authorization: "Requires payment authorization",
-  submitted: "Submitted",
-  confirmed: "Confirmed",
-  settlement_failed: "Settlement failed"
+  pending_funding: "Awaiting funding",
+  funded: "Funding received — payout pending",
+  payout_pending: "Funding received — payout pending",
+  cancelled: "Cancelled",
+  expired: "Expired",
+  reconciliation_failed: "Reconciliation failed — review required"
 };
 
 function formatStatus(status) {
@@ -24,7 +27,6 @@ function formatStatus(status) {
 function getModeLabel() {
   return "Quote ready";
 }
-
 
 export default function ReviewTransfer({ transferData, transferStatus, transferError, onConfirm, onBack }) {
   const quote = transferData.quote;
@@ -88,7 +90,7 @@ export default function ReviewTransfer({ transferData, transferStatus, transferE
           <Alert className="border-yellow-200 bg-yellow-50">
             <AlertTriangle className="w-5 h-5 text-yellow-600" />
             <AlertDescription className="text-yellow-800">
-              No Stripe payment has been authorized for this transfer yet. Complete payment authorization before submitting the transfer.
+              No Stripe payment has been authorized for this transfer yet. Complete payment authorization before submitting the transfer. Funding received does not pay the recipient.
             </AlertDescription>
           </Alert>
         )}
@@ -172,7 +174,7 @@ export default function ReviewTransfer({ transferData, transferStatus, transferE
 
         <div className="provider-readiness">
           <div>
-            <CheckCircle className="w-5 h-5 text-green-600" />
+            <ShieldCheck className="w-5 h-5 text-green-600" />
             <span>KYC: {kycStatus}</span>
           </div>
 
@@ -180,8 +182,14 @@ export default function ReviewTransfer({ transferData, transferStatus, transferE
             <ShieldCheck className="w-5 h-5 text-green-600" />
             <span>Screening: {sanctionsStatus}</span>
           </div>
-
         </div>
+
+        <Alert className="border-blue-200 bg-blue-50">
+          <Landmark className="w-5 h-5 text-blue-700" />
+          <AlertDescription className="text-blue-800">
+            Funding received does not pay the recipient. No payout provider is connected yet, so this transfer ends as "payout pending" — never "paid".
+          </AlertDescription>
+        </Alert>
       </CardContent>
 
       <CardFooter className="justify-between">
