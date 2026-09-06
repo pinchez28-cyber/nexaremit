@@ -148,6 +148,58 @@ export function buildQuote(sendAmountMinor, unitPerMajor = 100) {
   };
 }
 
+/**
+ * Server-owned bound-transfer quote (Batch 2 invariant).
+ * payment_intent_amount_minor === expected_charge_minor: the charge is the
+ * stored transfer anchor (copied from the quote total at creation), falling
+ * back to the stored quote's total_charge_minor only where the code contract
+ * says so. Throws 503 (fail-closed) when neither stored value exists.
+ * Every display sub-field is backfilled from the stored row so the response
+ * shape matches the legacy quote builder exactly.
+ */
+export function serverBoundQuote(transferRow, quoteRow) {
+  const raw =
+    transferRow?.expected_charge_minor ?? quoteRow?.total_charge_minor;
+  const total = Number(raw);
+  if (!Number.isFinite(total) || total <= 0) {
+    throw createHttpError(503, "The stored transfer amount is unavailable. Please try again.", {
+      reason: "stored_amount_unavailable",
+    });
+  }
+  const sendMinor = Number(
+    quoteRow?.send_amount_minor ?? transferRow?.send_amount_minor ?? total
+  );
+  const num = (v, d = 0) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : d;
+  };
+  const platformFee = num(quoteRow?.platform_fixed_minor) + num(quoteRow?.platform_percent_minor);
+  const payoutCost = num(quoteRow?.payout_fixed_minor) + num(quoteRow?.payout_percent_minor);
+  const fxMarkup = num(quoteRow?.fx_markup_minor);
+  const complianceBuffer = num(quoteRow?.compliance_buffer_minor);
+  // Stripe fee is the residual so the parts reconcile to the stored total.
+  const stripeFee = total - (sendMinor + platformFee + fxMarkup + payoutCost + complianceBuffer);
+  const exp = unitPerMajorFor(
+    quoteRow?.send_currency || transferRow?.send_currency || "usd"
+  );
+  return {
+    sendAmountMinor: sendMinor,
+    sendAmountMajor: sendMinor / exp,
+    platformFeeMinor: platformFee,
+    platformFeeMajor: platformFee / exp,
+    fxMarkupMinor: fxMarkup,
+    fxMarkupMajor: fxMarkup / exp,
+    payoutCostMinor: payoutCost,
+    payoutCostMajor: payoutCost / exp,
+    complianceBufferMinor: complianceBuffer,
+    complianceBufferMajor: complianceBuffer / exp,
+    stripeFeeMinor: stripeFee,
+    stripeFeeMajor: stripeFee / exp,
+    totalChargeMinor: total,
+    totalChargeMajor: total / exp,
+  };
+}
+
 export function createPaymentIntentHandler(deps = {}) {
   const {
     getStripeImpl,
@@ -225,7 +277,11 @@ export function createPaymentIntentHandler(deps = {}) {
     // 1000, USD/EUR/KES 100) and keeps legacy amountMinor/amount working.
     // One exponent table lives in money.js; no /100 or *100 is hard-coded
     // anywhere on the money path.
-    const sendAmountMinor = resolveSendAmountMinor(body, currency);
+    // NOTE (sandbox fix): this client-derived value serves the legacy
+    // (unbound) path only. The BOUND path re-resolves both below from the
+    // stored transfer/quote — never from this value.
+    let sendAmountMinor = resolveSendAmountMinor(body, currency);
+    let effectiveCurrency = currency;
 
     const referenceId =
       String(body.referenceId || "").trim() ||
@@ -359,13 +415,35 @@ export function createPaymentIntentHandler(deps = {}) {
       }
       boundQuote = quoteLookup.data;
       boundTransfer = transferRow;
+      // BOUND (Batch 2 invariant): the charge amount + currency are the STORED
+      // server-owned values — expected_charge_minor (transfer anchor, copied
+      // from the quote total at creation) and the stored send currency. A
+      // client amount/currency override would change the charge, so both are
+      // re-resolved here and the client values are NEVER consulted below.
+      effectiveCurrency = normalizeCurrency(
+        boundTransfer.send_currency || boundQuote?.send_currency || "usd",
+        "usd"
+      );
+      sendAmountMinor = Number(
+        boundTransfer.expected_charge_minor ?? boundQuote?.total_charge_minor
+      );
     }
 
-    const quote = quoteBuilder(sendAmountMinor, unitPerMajorFor(currency)) || buildQuote(sendAmountMinor, unitPerMajorFor(currency));
+    const quote = boundTransfer
+      // BOUND (Batch 2 invariant): the charge amount is the STORED server-owned
+      // expected_charge_minor (transfer anchor, copied from the quote total at
+      // creation). Client-supplied amounts/fees/FX/recipient/status are NEVER
+      // consulted here — tampering is impossible by construction. Fall back to
+      // the stored quote's total_charge_minor only when the transfer anchor is
+      // absent (legacy rows); fail closed when neither exists.
+      ? serverBoundQuote(boundTransfer, boundQuote)
+      : (quoteBuilder(sendAmountMinor, unitPerMajorFor(effectiveCurrency)) || buildQuote(sendAmountMinor, unitPerMajorFor(effectiveCurrency)));
 
-    const recipientAmountMinor = Number(
-      explicitRecipientAmountMinor ?? quote.sendAmountMinor
-    );
+    // Recipient payout view: bound transfers settle from the STORED quote
+    // (server-owned receive side). Legacy path keeps the direct-amount flow.
+    const recipientAmountMinor = boundTransfer
+      ? Number(boundQuote?.receive_amount_minor ?? quote.sendAmountMinor)
+      : Number(explicitRecipientAmountMinor ?? quote.sendAmountMinor);
 
     if (!Number.isFinite(recipientAmountMinor) || recipientAmountMinor <= 0) {
       return sendJson(res, 400, {
@@ -377,8 +455,13 @@ export function createPaymentIntentHandler(deps = {}) {
     }
 
     const recipientCurrency = normalizeCurrency(
-      body.recipientCurrency || body.quote?.recipientCurrency || currency,
-      currency
+      // Bound transfers settle in the STORED quote currency — never a client
+      // override (a currency swap would change the payout meaning).
+      (boundTransfer ? boundQuote?.receive_currency : null) ||
+        body.recipientCurrency ||
+        body.quote?.recipientCurrency ||
+        effectiveCurrency,
+      effectiveCurrency
     );
 
     const transferGroup = `remit_${transferId}`;
@@ -448,7 +531,7 @@ export function createPaymentIntentHandler(deps = {}) {
     // default anyway, so it is omitted entirely.
     const createParams = {
       amount: quote.totalChargeMinor,
-      currency,
+      currency: effectiveCurrency,
       capture_method: "automatic",
       description: `NexaRemit transfer ${referenceId}`,
       metadata,

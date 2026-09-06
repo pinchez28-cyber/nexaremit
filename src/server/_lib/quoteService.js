@@ -175,7 +175,6 @@ export function buildQuoteSnapshot({
     user_id: String(userId),
     status: QUOTE_STATUS.ISSUED,
     recipient_id: UUID_RE.test(String(recipientId)) ? String(recipientId) : null,
-    recipient_ref: String(recipientId),
     send_currency: sendCurrency,
     send_amount_major: sendAmountMajor,
     send_amount_minor: sendMinor,
@@ -185,15 +184,12 @@ export function buildQuoteSnapshot({
     fx_rate: Number(rate),
     platform_fixed_minor: envInt("NEXA_PLATFORM_FIXED_FEE_CENTS", 99),
     platform_percent_minor: platformPercentMinor,
-    platform_fee_minor: quote.platformFeeMinor,
     fx_markup_minor: quote.fxMarkupMinor,
     payout_fixed_minor: envInt("NEXA_PAYOUT_FIXED_FEE_CENTS", 0),
     payout_percent_minor: payoutPercentMinor,
-    payout_cost_minor: quote.payoutCostMinor,
     compliance_buffer_minor: quote.complianceBufferMinor,
     stripe_fee_minor: quote.stripeFeeMinor,
     total_charge_minor: quote.totalChargeMinor,
-    total_charge_major: quote.totalChargeMajor,
     expires_at: expiresAt,
     created_at: createdAt,
     consumed_at: null,
@@ -207,7 +203,7 @@ export function toClientQuote(row) {
   return {
     id: row.id,
     status: row.status,
-    recipientId: row.recipient_id || row.recipient_ref || null,
+    recipientId: row.recipient_id || null,
     sendCurrency: row.send_currency,
     sendAmountMajor: Number(row.send_amount_major),
     sendAmountMinor: Number(row.send_amount_minor),
@@ -216,15 +212,19 @@ export function toClientQuote(row) {
     receiveAmountMinor: Number(row.receive_amount_minor),
     fxRate: row.fx_rate == null ? null : Number(row.fx_rate),
     fees: {
-      platformFeeMinor: Number(row.platform_fee_minor ?? row.platform_fixed_minor ?? 0),
+      // Phantom columns platform_fee_minor / payout_cost_minor are NOT in the
+      // approved schema; derive the totals from the fixed+percent split.
+      platformFeeMinor: Number((row.platform_fixed_minor ?? 0) + (row.platform_percent_minor ?? 0)),
       fxMarkupMinor: Number(row.fx_markup_minor ?? 0),
-      payoutCostMinor: Number(row.payout_cost_minor ?? row.payout_fixed_minor ?? 0),
+      payoutCostMinor: Number((row.payout_fixed_minor ?? 0) + (row.payout_percent_minor ?? 0)),
       complianceBufferMinor: Number(row.compliance_buffer_minor ?? 0),
       stripeFeeMinor: Number(row.stripe_fee_minor ?? 0),
     },
     totalChargeMinor: Number(row.total_charge_minor),
+    // Phantom column total_charge_major is NOT in the approved schema; derive
+    // the major-unit view from total_charge_minor via the ISO 4217 exponent.
     totalChargeMajor:
-      row.total_charge_major == null ? null : Number(row.total_charge_major),
+      Number(row.total_charge_minor) / unitPerMajorFor(row.send_currency || "USD"),
     expiresAt: row.expires_at,
     createdAt: row.created_at,
     consumedAt: row.consumed_at || null,
@@ -289,13 +289,10 @@ export async function issueQuote({ user, body, store, gates }) {
     sendAmountMajor: normalized.sendAmountMajor,
   });
   if (normalized.idempotencyKey) row.idempotency_key = normalized.idempotencyKey;
-  if (gateResult?.recipient) {
-    row.recipient_snapshot = {
-      corridor: gateResult.recipient.corridor || null,
-      limit: gateResult.recipient.limit ?? null,
-      risk: gateResult.recipient.risk || null,
-    };
-  }
+  // NOTE (sandbox fix): the approved quotes schema has no recipient_snapshot
+  // column, and no active code path reads it — the gate recipient is re-resolved
+  // server-side at transfer creation (runFullTransferGates), so nothing is
+  // persisted here. Do NOT re-add snapshot fields to this payload.
 
   const created = await store.createQuote(row);
   if (created?.error || !created?.data) {

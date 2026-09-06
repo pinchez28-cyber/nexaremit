@@ -77,7 +77,7 @@ export function buildTransferRow({ user, quote, idempotencyKey }) {
     id,
     user_id: String(user.id),
     recipient_name: String(
-      quote.recipient_name || quote.recipient_ref || "Recipient"
+      quote.recipient_name || "Recipient"
     ),
     destination: String(quote.recipient_destination || quote.receive_currency || ""),
     send_amount: Number(quote.send_amount_major || 0),
@@ -200,7 +200,7 @@ export async function runFullTransferGates({ user, quote, gates }) {
       amount: Number(quote.send_amount_major || 0),
       currency: quote.send_currency,
       recipient: {
-        name: quote.recipient_name || quote.recipient_ref,
+        name: quote.recipient_name,
         corridor: quote.recipient_corridor || "US-NG",
         limit: Number(quote.recipient_limit || 2500),
         risk: quote.recipient_risk || null,
@@ -462,13 +462,15 @@ export function buildServerReceipt({ transfer, quote = null }) {
 
   // Quote-derived breakdown (all minor units of the send currency). The stored
   // quote is the source of truth; the transfer row's anchors are the fallback.
+  // NOTE (sandbox fix): the approved quotes schema has no platform_fee_minor /
+  // payout_cost_minor columns — derive the totals from the fixed+percent split.
   const feeBreakdown = {
     platformFeeMinor: Number(
-      quote?.platform_fee_minor ?? quote?.platform_fixed_minor ?? 0
+      (quote?.platform_fixed_minor ?? 0) + (quote?.platform_percent_minor ?? 0)
     ),
     fxMarkupMinor: Number(quote?.fx_markup_minor ?? 0),
     payoutCostMinor: Number(
-      quote?.payout_cost_minor ?? quote?.payout_fixed_minor ?? 0
+      (quote?.payout_fixed_minor ?? 0) + (quote?.payout_percent_minor ?? 0)
     ),
     complianceBufferMinor: Number(quote?.compliance_buffer_minor ?? 0),
     stripeFeeMinor: Number(quote?.stripe_fee_minor ?? 0),
