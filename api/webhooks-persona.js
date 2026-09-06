@@ -1,7 +1,7 @@
 ﻿import crypto from "node:crypto";
 import { requireMethod, sendJson } from "../src/server/_lib/http.js";
 import { upsertKycRecord } from "../src/server/_lib/kycRecords.js";
-import { parsePersonaEvent } from "../src/server/_lib/persona.js";
+import { parsePersonaEvent, normalizePersonaOutcome } from "../src/server/_lib/persona.js";
 
 function verifyPersonaSignature(rawBody, signature) {
   if (!process.env.PERSONA_WEBHOOK_SECRET) return false;
@@ -68,13 +68,27 @@ export default async function handler(request, response) {
     return;
   }
 
+  // Decision-aware normalization: Persona's decision is authoritative. Only an
+  // explicitly successful outcome (e.g. status completed/approved + decision
+  // approved/passed) becomes approved; declined/failed/rejected decisions and
+  // pending / needs_review / expired / canceled (or ambiguous/missing) events
+  // are persisted as non-approved. A decision that looks successful can never
+  // override a terminal rejection, and upserting is idempotent by user id.
+  const normalizedStatus = normalizePersonaOutcome({
+    status: event.status,
+    decision: event.decision,
+  });
+
   const saved = await upsertKycRecord({
     userId: event.referenceId,
     provider: "persona",
     providerInquiryId: event.inquiryId,
-    status: event.status,
+    status: normalizedStatus,
     metadata: {
       eventName: event.eventName,
+      decision: event.decision || null,
+      status: event.status || null,
+      templateVersion: event.templateVersion || null,
       receivedAt: new Date().toISOString()
     }
   });

@@ -53,10 +53,16 @@ test("P0-2: kycGate.js no longer contains the wrong host (regression guard)", as
 // ---- P0-2: fail-closed verification ----------------------------------------
 
 const REAL_KEY = process.env.PERSONA_API_KEY;
+const REAL_KYC = process.env.NEXA_REQUIRE_KYC;
 
 function setKey(value) {
   if (value === undefined) delete process.env.PERSONA_API_KEY;
   else process.env.PERSONA_API_KEY = value;
+}
+
+function setKycRequired(value) {
+  if (value === undefined) delete process.env.NEXA_REQUIRE_KYC;
+  else process.env.NEXA_REQUIRE_KYC = value;
 }
 
 describe("verifyKycInquiry (fail-closed)", () => {
@@ -64,11 +70,15 @@ describe("verifyKycInquiry (fail-closed)", () => {
 
   before(() => {
     setKey("test-key");
+    // Make the gate hermetic: these tests exercise the real Persona fetch, so
+    // KYC enforcement must be ON regardless of the shell environment.
+    setKycRequired("true");
     fetchMock = mock.method(globalThis, "fetch");
   });
 
   after(() => {
     setKey(REAL_KEY);
+    setKycRequired(REAL_KYC);
     mock.restoreAll();
   });
 
@@ -82,7 +92,8 @@ describe("verifyKycInquiry (fail-closed)", () => {
         },
       }),
     }));
-    const result = await verifyKycInquiry("inq_known");
+    // Ownership: the inquiry's reference-id must match the authenticated user.
+    const result = await verifyKycInquiry("inq_known", "user-123");
     assert.equal(result.ok, true);
     assert.equal(result.source, "persona");
     assert.equal(result.referenceId, "user-123");
@@ -93,10 +104,10 @@ describe("verifyKycInquiry (fail-closed)", () => {
       ok: true,
       status: 200,
       json: async () => ({
-        data: { attributes: { status: "completed", decision: "declined" } },
+        data: { attributes: { status: "completed", decision: "declined", "reference-id": "user-123" } },
       }),
     }));
-    const result = await verifyKycInquiry("inq_declined");
+    const result = await verifyKycInquiry("inq_declined", "user-123");
     assert.equal(result.ok, false);
     assert.equal(result.code, "kyc_declined");
   });
@@ -106,10 +117,10 @@ describe("verifyKycInquiry (fail-closed)", () => {
       ok: true,
       status: 200,
       json: async () => ({
-        data: { attributes: { status: "pending" } },
+        data: { attributes: { status: "pending", "reference-id": "user-123" } },
       }),
     }));
-    const result = await verifyKycInquiry("inq_pending");
+    const result = await verifyKycInquiry("inq_pending", "user-123");
     assert.equal(result.ok, false);
     assert.equal(result.code, "kyc_incomplete");
   });
@@ -122,7 +133,7 @@ describe("verifyKycInquiry (fail-closed)", () => {
         throw new Error("no body");
       },
     }));
-    const result = await verifyKycInquiry("inq_500");
+    const result = await verifyKycInquiry("inq_500", "user-123");
     assert.equal(result.ok, false);
     assert.ok(["kyc_provider_error", "kyc_unverifiable"].includes(result.code));
   });
@@ -133,7 +144,7 @@ describe("verifyKycInquiry (fail-closed)", () => {
       status: 404,
       json: async () => ({}),
     }));
-    const result = await verifyKycInquiry("inq_missing");
+    const result = await verifyKycInquiry("inq_missing", "user-123");
     assert.equal(result.ok, false);
     assert.equal(result.code, "kyc_inquiry_not_found");
   });
@@ -142,13 +153,13 @@ describe("verifyKycInquiry (fail-closed)", () => {
     fetchMock.mock.mockImplementationOnce(async () => {
       throw new TypeError("fetch failed");
     });
-    const result = await verifyKycInquiry("inq_net");
+    const result = await verifyKycInquiry("inq_net", "user-123");
     assert.equal(result.ok, false);
     assert.equal(result.code, "kyc_provider_unreachable");
   });
 
   test("no inquiry id supplied is refused (kyc_required)", async () => {
-    const result = await verifyKycInquiry("");
+    const result = await verifyKycInquiry("", "user-123");
     assert.equal(result.ok, false);
     assert.equal(result.code, "kyc_required");
   });
@@ -157,14 +168,22 @@ describe("verifyKycInquiry (fail-closed)", () => {
     setKey(undefined);
     // No fetch should be attempted: verifyWithPersona returns null when the
     // key is absent, then the DB fallback is also absent (no Supabase env).
-    const result = await verifyKycInquiry("inq_nokey");
+    const result = await verifyKycInquiry("inq_nokey", "user-123");
     assert.equal(result.ok, false);
     assert.equal(result.code, "kyc_unverifiable");
   });
 
   test("all Persona calls used the CORRECT api.withpersona.com host", () => {
     const calls = fetchMock.mock.calls;
-    for (const call of calls) {
+    // Only Persona verification calls matter here: with a Persona key present
+    // but the DB unconfigured, verifyWithPersona is the ONLY fetch attempted.
+    // (verifyWithDatabase does not fetch — supabase-js does, against SUPABASE_URL,
+    // which the environment may legitimately set.) Filter to Persona inquiry URLs.
+    const personaCalls = calls.filter((call) =>
+      String(call.arguments[0]).includes("/api/v1/inquiries/")
+    );
+    assert.ok(personaCalls.length >= 1, "expected at least one Persona verification call");
+    for (const call of personaCalls) {
       const url = String(call.arguments[0]);
       assert.ok(
         url.startsWith("https://api.withpersona.com/api/v1/inquiries/"),
@@ -172,5 +191,105 @@ describe("verifyKycInquiry (fail-closed)", () => {
       );
       assert.ok(!url.includes("https://withpersona.com"), `wrong host used: ${url}`);
     }
+  });
+});
+
+// ---- SECURITY: Persona inquiry ownership binding ----------------------------
+// An inquiry may only satisfy KYC for the authenticated user named in its
+// server-owned reference-id. Missing or foreign reference-ids fail closed, and
+// no body-supplied id/email can override the authenticated user.
+
+describe("verifyKycInquiry (ownership binding)", () => {
+  let fetchMock;
+
+  before(() => {
+    setKey("test-key");
+    setKycRequired("true");
+    fetchMock = mock.method(globalThis, "fetch");
+  });
+
+  after(() => {
+    setKey(REAL_KEY);
+    setKycRequired(REAL_KYC);
+    mock.restoreAll();
+  });
+
+  function personaFetch(attributes) {
+    fetchMock.mock.mockImplementationOnce(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { attributes } }),
+    }));
+  }
+
+  test("A: authenticated user + matching inquiry reference-id passes", async () => {
+    personaFetch({ status: "completed", decision: "approved", "reference-id": "user-123" });
+    const result = await verifyKycInquiry("inq_owner_ok", "user-123");
+    assert.equal(result.ok, true);
+    assert.equal(result.source, "persona");
+    assert.equal(result.referenceId, "user-123");
+  });
+
+  test("B: authenticated user + ANOTHER user's inquiry reference-id is rejected", async () => {
+    // The inquiry belongs to user-999; the caller is user-123. Even though the
+    // inquiry is approved, it must NOT satisfy user-123's KYC.
+    personaFetch({ status: "approved", decision: "approved", "reference-id": "user-999" });
+    const result = await verifyKycInquiry("inq_owner_foreign", "user-123");
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "kyc_ownership_mismatch");
+    assert.equal(result.source, undefined);
+  });
+
+  test("C: missing Persona reference-id is rejected", async () => {
+    personaFetch({ status: "completed", decision: "approved" });
+    const result = await verifyKycInquiry("inq_owner_missing", "user-123");
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "kyc_ownership_unverifiable");
+  });
+
+  test("D: client body userId/referenceId/email cannot override authenticated ownership", async () => {
+    // The body claims user-123, but the authenticated user is user-555. The
+    // inquiry's reference-id is user-123 — matching the BODY, not the session —
+    // so the check must fail: ownership is proven from the session, never from
+    // client-supplied fields.
+    const body = { userId: "user-123", referenceId: "user-123", email: "victim@example.com" };
+    personaFetch({
+      status: "approved",
+      decision: "approved",
+      "reference-id": body.referenceId,
+    });
+    const result = await verifyKycInquiry("inq_owner_spoof", "user-555");
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "kyc_ownership_mismatch");
+  });
+
+  test("E: rejected ownership does NOT get persisted as approved (no approved record path)", async () => {
+    // verifyKycInquiry never writes records itself — it only ever RETURNS a
+    // verdict. When ownership fails, the verdict is a denial; callers that
+    // persist (webhook/kyc-start) gate on that verdict, so a denied result can
+    // never lead to an approved kyc record. Prove no approved result escapes
+    // the gate for an unowned inquiry, and that the generic denial contains no
+    // foreign identity details.
+    personaFetch({
+      status: "approved",
+      decision: "approved",
+      "reference-id": "user-999",
+      email: "victim@example.com",
+    });
+    const result = await verifyKycInquiry("inq_owner_foreign2", "user-123");
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "kyc_ownership_mismatch");
+    const message = String(result.message || "");
+    assert.ok(
+      !message.includes("user-999") &&
+        !message.includes("victim@example.com") &&
+        !message.includes("inq_owner_foreign2"),
+      "denial must not echo the foreign owner, email, or inquiry id"
+    );
+    assert.equal(
+      result.referenceId,
+      undefined,
+      "no referenceId may leak from a denied ownership check"
+    );
   });
 });

@@ -352,9 +352,12 @@ export function createPaymentIntentHandler(deps = {}) {
     // Runs BEFORE any PaymentIntent is created, so an unverified sender can
     // never reach the card form with a live client secret. The browser only
     // supplies an inquiry ID; approval itself is confirmed server-side against
-    // Persona (or the webhook-written kyc_records table).
+    // Persona (or the webhook-written kyc_records table), and the inquiry must
+    // belong to THIS authenticated user. The caller may pass extra ids/emails
+    // in the body, but they are never used to prove ownership: only the user
+    // resolved from the session above is trusted.
     const kyc = verifyKyc
-      ? await verifyKyc(body.kycInquiryId || body.inquiryId || body.kyc?.inquiryId)
+      ? await verifyKyc(body.kycInquiryId || body.inquiryId || body.kyc?.inquiryId, user)
       : { ok: true, source: "unconfigured", skipped: true };
 
     if (!kyc.ok) {

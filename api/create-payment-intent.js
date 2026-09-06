@@ -4,6 +4,11 @@
 // at this). All logic lives in src/server/_lib/createPaymentIntentHandler.js;
 // this file is the production wiring: lazy Stripe singleton, real
 // requireAuthenticatedUser, real verifyKycInquiry.
+//
+// KYC ownership: the inquiry id comes from the client, but the user identity
+// verified against the inquiry's reference-id comes from the authenticated
+// session — never from the body. verifyKycInquiry is bound to the server's
+// user via the userId argument below.
 
 import { createRequire } from "node:module";
 import { requireAuthenticatedUser } from "../src/server/_lib/requireUser.js";
@@ -68,6 +73,11 @@ function getStripe() {
 export default createPaymentIntentHandler({
   getStripeImpl: getStripe,
   requireAuthenticatedUser,
-  verifyKyc: verifyKycInquiry,
+  // verifyKyc wraps the two ownership facts the money path needs: (1) the
+  // inquiry id comes from the client and is re-verified server-side; (2) the
+  // user owning that inquiry is THE authenticated user (from the verified
+  // session). Passing user.id here binds the check to the session — never to
+  // a body-supplied id.
+  verifyKyc: async (inquiryId, user) => verifyKycInquiry(inquiryId, user?.id),
   transferStore: makeTransferStore(),
 });

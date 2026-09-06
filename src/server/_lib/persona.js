@@ -1,7 +1,83 @@
 import { PERSONA_INQUIRIES_URL } from "./persona-endpoints.js";
 
+// Terminal, explicit Persona statuses and decisions used by the normalizer.
+const TERMINAL_REJECT_STATUSES = new Set([
+  "declined",
+  "failed",
+  "expired",
+  "canceled",
+  "cancelled",
+]);
+const FAILING_DECISIONS = new Set(["declined", "failed", "rejected"]);
+const ACCEPTABLE_DECISIONS = new Set(["approved", "passed"]);
+const ACCEPTABLE_TERMINAL_STATUSES = new Set(["approved", "completed", "passed"]);
+const NON_APPROVED_STATUSES = new Set([
+  "pending",
+  "needs_review",
+  "requires_review",
+  "manual_review",
+]);
+
+/**
+ * Decision-aware KYC normalization (authoritative Persona outcome only).
+ *
+ * An inquiry may ONLY become "approved" when it is both terminal AND carries an
+ * explicit acceptable Persona decision. A superficially successful status
+ * ("completed") with a declined/rejected decision, or with no decision at all,
+ * is never approved. pending / needs_review / expired / canceled and any
+ * ambiguous or missing outcome fail closed to a non-approved state.
+ *
+ * Returns the normalized status string: "approved", "declined", "needs_review",
+ * "pending", or "unknown" for ambiguous/missing outcomes.
+ */
+export function normalizePersonaOutcome(event = {}) {
+  const status = String(event.status || "").trim().toLowerCase();
+  const decision = String(event.decision || "").trim().toLowerCase();
+
+  if (TERMINAL_REJECT_STATUSES.has(status)) return "declined";
+
+  if (FAILING_DECISIONS.has(decision)) return "declined";
+
+  if (
+    ACCEPTABLE_DECISIONS.has(decision) &&
+    ACCEPTABLE_TERMINAL_STATUSES.has(status)
+  ) {
+    return "approved";
+  }
+
+  if (NON_APPROVED_STATUSES.has(status)) {
+    return status === "needs_review" ||
+      status === "requires_review" ||
+      status === "manual_review"
+      ? "needs_review"
+      : "pending";
+  }
+
+  // Anything else — status present without an acceptable decision, or decision
+  // without a terminal status, or nothing usable at all — fails closed.
+  return "unknown";
+}
+
 export function isPersonaConfigured() {
   return Boolean(process.env.PERSONA_API_KEY && process.env.PERSONA_TEMPLATE_ID);
+}
+
+/**
+ * Resolve the Persona environment label reported to clients.
+ *
+ * The configured PERSONA_ENVIRONMENT wins when present; otherwise the label
+ * defaults from TRANSFER_MODE so sandbox reports "sandbox" and production
+ * reports "production". Never returns credential material — a label only.
+ */
+export function resolvePersonaMode({ personaEnvironment, transferMode } = {}) {
+  const env = String(personaEnvironment || "")
+    .trim()
+    .toLowerCase();
+  if (env) return env;
+  const transfer = String(transferMode || "")
+    .trim()
+    .toLowerCase();
+  return transfer === "production" ? "production" : "sandbox";
 }
 
 export async function createPersonaInquiry({ user }) {
@@ -64,12 +140,20 @@ export function parsePersonaEvent(payload = {}) {
   const inquiryAttributes = inquiry?.attributes || {};
   const referenceId = inquiryAttributes["reference-id"] || inquiryAttributes.referenceId || attributes["reference-id"];
   const status = inquiryAttributes.status || attributes.status || "pending";
+  const decision = inquiryAttributes.decision || attributes.decision || "";
+  const templateVersion =
+    attributes["template-version"] ||
+    attributes.templateVersion ||
+    inquiryAttributes["template-version"] ||
+    "";
 
   return {
     eventName,
     inquiryId: inquiry?.id || data.id || "",
     referenceId,
     status,
+    decision,
+    templateVersion,
     raw: payload
   };
 }

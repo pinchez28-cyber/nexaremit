@@ -1,5 +1,9 @@
 ﻿import { requireAuthenticatedUser } from "../src/server/_lib/requireUser.js";
 import { upsertKycRecord } from "../src/server/_lib/kycRecords.js";
+import {
+  normalizePersonaOutcome,
+  resolvePersonaMode,
+} from "../src/server/_lib/persona.js";
 
 export default async function handler(req, res) {
   const send = (status, body) => {
@@ -16,11 +20,8 @@ export default async function handler(req, res) {
     return "";
   };
 
-  const normalizeStatus = (value) =>
-    toStr(value).toLowerCase().replace(/\s+/g, "_");
-
   const isTerminalStatus = (status) => {
-    const s = normalizeStatus(status);
+    const s = toStr(status).toLowerCase();
     return [
       "completed",
       "approved",
@@ -109,6 +110,12 @@ export default async function handler(req, res) {
     const isProductionMode = String(TRANSFER_MODE || "sandbox")
       .trim()
       .toLowerCase() === "production";
+    // The environment label reported to clients: configured Persona
+    // environment wins, else derived from TRANSFER_MODE. Never a credential.
+    const personaMode = resolvePersonaMode({
+      personaEnvironment: process.env.PERSONA_ENVIRONMENT,
+      transferMode: process.env.TRANSFER_MODE || "sandbox",
+    });
     const PERSONA_API_KEY = toStr(process.env.PERSONA_API_KEY);
     const PERSONA_TEMPLATE_ID = toStr(process.env.PERSONA_TEMPLATE_ID);
     const PERSONA_CREATE_INQUIRY_URL =
@@ -233,7 +240,6 @@ export default async function handler(req, res) {
       const attrs = data?.attributes || {};
 
       const inquiryStatus = pickFirstString(attrs.status, "unknown");
-      const normalized = normalizeStatus(inquiryStatus);
       const terminal = isTerminalStatus(inquiryStatus);
 
       const decision = pickFirstString(
@@ -250,6 +256,36 @@ export default async function handler(req, res) {
         attrs.updatedAt
       );
 
+      // Ownership: this status path only ever reports/persists outcomes for
+      // inquiries whose server-owned reference-id matches the authenticated
+      // user. A missing or foreign reference-id fails closed WITHOUT
+      // persisting anything and WITHOUT echoing the inquiry's owner — another
+      // user's identity details are never returned to this caller.
+      const referenceId = pickFirstString(
+        attrs["reference-id"],
+        attrs.referenceId
+      );
+
+      if (!referenceId || referenceId !== user.id) {
+        return send(403, {
+          ok: false,
+          route: "kyc-start",
+          stage: "persona-status-ownership",
+          action: "status",
+          error:
+            "This identity verification is not bound to your account and cannot be used.",
+        });
+      }
+
+      // Decision-aware normalization (shared with the webhook): only an
+      // explicitly acceptable Persona outcome becomes approved; completed
+      // without a usable decision (or declined/rejected/pending/review/etc.)
+      // is never persisted as approved.
+      const normalizedOutcome = normalizePersonaOutcome({
+        status: inquiryStatus,
+        decision,
+      });
+
       // Persist the outcome against the customer. Until now the only record
       // that someone had verified was an inquiry id in their browser's local
       // storage - clear site data and the verification was gone, with nothing
@@ -262,33 +298,25 @@ export default async function handler(req, res) {
           userId: user.id,
           provider: "persona",
           providerInquiryId: inquiryId,
-          status: normalized,
+          status: normalizedOutcome,
           metadata: { decision: decision || null, completedAt: completedAt || null },
         });
       } catch (recordError) {
         console.error(`[kyc-start] could not persist kyc record: ${recordError.message}`);
       }
 
-      const referenceId = pickFirstString(
-        attrs["reference-id"],
-        attrs.referenceId
-      );
-
-      const passed =
-        ["approved", "passed"].includes(normalized) ||
-        (normalized === "completed" &&
-          !["declined", "failed"].includes(normalizeStatus(decision)));
+      const passed = normalizedOutcome === "approved";
 
       return send(200, {
         ok: true,
         route: "kyc-start",
         stage: "persona-status-success",
         action: "status",
-        mode: "production",
+        mode: personaMode,
         provider: "persona",
         inquiryId,
         inquiryStatus,
-        normalizedStatus: normalized,
+        normalizedStatus: normalizedOutcome,
         decision: decision || "",
         isTerminal: terminal,
         passed,
@@ -454,7 +482,7 @@ export default async function handler(req, res) {
       route: "kyc-start",
       stage: "persona-success",
       action: "create",
-      mode: "production",
+      mode: personaMode,
       provider: "persona",
       message: finalVerificationUrl
         ? "Identity check prepared. Opening Persona..."

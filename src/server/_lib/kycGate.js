@@ -5,6 +5,13 @@
 // Persona's API (and/or the kyc_records table written by the signed Persona
 // webhook). A caller cannot mark themselves approved by editing localStorage
 // or the request body.
+//
+// Ownership binding (Batch hardening): an inquiry may only satisfy KYC for the
+// authenticated user whose id appears in the inquiry's server-owned
+// reference-id. The authenticated user id is supplied by the route from the
+// verified session — never from the request body — and a missing or foreign
+// reference-id fails closed. A caller's own claims are never proof of
+// ownership.
 
 import { getSupabaseAdminClient } from "./supabaseClient.js";
 import { normalizeKycStatus } from "./kycRecords.js";
@@ -29,7 +36,7 @@ export function isKycRequired() {
   );
 }
 
-async function verifyWithPersona(inquiryId) {
+async function verifyWithPersona(inquiryId, userId) {
   if (!process.env.PERSONA_API_KEY) return null;
 
   let response;
@@ -71,6 +78,19 @@ async function verifyWithPersona(inquiryId) {
   const status = String(attributes.status || "").toLowerCase();
   const decision = String(attributes.decision || "").toLowerCase();
 
+  // Ownership is proven against the inquiry's server-owned reference-id BEFORE
+  // any outcome can be accepted. A missing or foreign reference-id fails
+  // closed: another user's approved inquiry can never satisfy this user's KYC,
+  // and the caller's own claims are never evidence of ownership.
+  const ownership = assertPersonaOwnership(userId, attributes);
+  if (!ownership.ok) {
+    return {
+      ok: false,
+      code: ownership.code,
+      message: ownership.message,
+    };
+  }
+
   if (decision && FAILING_DECISIONS.has(decision)) {
     return {
       ok: false,
@@ -97,11 +117,11 @@ async function verifyWithPersona(inquiryId) {
     source: "persona",
     status,
     decision,
-    referenceId: attributes["reference-id"] || null,
+    referenceId: ownership.referenceId,
   };
 }
 
-async function verifyWithDatabase(inquiryId) {
+async function verifyWithDatabase(inquiryId, userId) {
   const supabase = getSupabaseAdminClient();
   if (!supabase) return null;
 
@@ -112,6 +132,17 @@ async function verifyWithDatabase(inquiryId) {
     .maybeSingle();
 
   if (error || !data) return null;
+
+  // The stored record is only authoritative for the user it belongs to. A
+  // record with a missing or different owner must never approve this caller.
+  if (String(data.user_id || "") !== String(userId || "")) {
+    return {
+      ok: false,
+      code: "kyc_ownership_mismatch",
+      message:
+        "This identity verification is not bound to your account and cannot be used.",
+    };
+  }
 
   const status = normalizeKycStatus(data.status);
 
@@ -129,13 +160,51 @@ async function verifyWithDatabase(inquiryId) {
 }
 
 /**
+ * Prove that a Persona inquiry was issued for this exact user.
+ *
+ * The authoritative reference-id lives on the Persona inquiry (set server-side
+ * by kyc-start / createPersonaInquiry). `userId` must come from the verified
+ * session, never from the request body. Missing reference-id or a mismatch
+ * fails closed so one user's approved inquiry can never satisfy another's KYC.
+ */
+function assertPersonaOwnership(userId, inquiryAttributes) {
+  const referenceId = String(
+    inquiryAttributes["reference-id"] || inquiryAttributes.referenceId || ""
+  ).trim();
+
+  if (!referenceId) {
+    return {
+      ok: false,
+      code: "kyc_ownership_unverifiable",
+      message:
+        "This identity verification is not bound to your account and cannot be used.",
+    };
+  }
+
+  if (referenceId !== String(userId || "")) {
+    return {
+      ok: false,
+      code: "kyc_ownership_mismatch",
+      message:
+        "This identity verification is not bound to your account and cannot be used.",
+    };
+  }
+
+  return { ok: true, referenceId };
+}
+
+/**
  * Verify that the supplied Persona inquiry represents a completed, approved
- * identity check.
+ * identity check FOR the authenticated user whose id is passed here.
+ *
+ * `userId` MUST come from the verified session (requireAuthenticatedUser), not
+ * from the request body or any client-supplied claim. The inquiry's
+ * server-owned reference-id must match it exactly, or the check fails closed.
  *
  * Returns { ok: true, ... } or { ok: false, code, message, ... }.
  * Fails closed: if verification cannot be performed, access is denied.
  */
-export async function verifyKycInquiry(inquiryId) {
+export async function verifyKycInquiry(inquiryId, userId) {
   if (!isKycRequired()) {
     return { ok: true, source: "disabled", skipped: true };
   }
@@ -151,12 +220,25 @@ export async function verifyKycInquiry(inquiryId) {
     };
   }
 
-  // Persona is the authoritative source when it is configured.
-  const personaResult = await verifyWithPersona(id);
+  const caller = String(userId || "").trim();
+
+  if (!caller) {
+    // No authenticated identity: refuse. Ownership can never be proven.
+    return {
+      ok: false,
+      code: "kyc_required",
+      message: "You must be signed in before completing identity verification.",
+    };
+  }
+
+  // Persona is the authoritative source when it is configured. Its owning
+  // reference-id is matched against the authenticated user id.
+  const personaResult = await verifyWithPersona(id, caller);
   if (personaResult) return personaResult;
 
   // Otherwise fall back to the record written by the signed Persona webhook.
-  const databaseResult = await verifyWithDatabase(id);
+  // The record must likewise be owned by the authenticated user.
+  const databaseResult = await verifyWithDatabase(id, caller);
   if (databaseResult) return databaseResult;
 
   // Neither source available: fail closed rather than let money move
